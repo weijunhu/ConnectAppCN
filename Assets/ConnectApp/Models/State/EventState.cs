@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
+using ConnectApp.Models.Model;
 
-namespace ConnectApp.models {
+namespace ConnectApp.Models.State {
     public enum EventType {
         online,
         offline
@@ -11,12 +12,16 @@ namespace ConnectApp.models {
     public class EventState {
         public bool eventsOngoingLoading { get; set; }
         public bool eventsCompletedLoading { get; set; }
+        public bool homeEventsLoading { get; set; }
         public List<string> ongoingEvents { get; set; }
         public int ongoingEventTotal { get; set; }
         public List<string> completedEvents { get; set; }
         public int completedEventTotal { get; set; }
-        public int pageNumber { get; set; }
+        public List<string> homeEvents { get; set; }
+        public int ongoingPageNumber { get; set; }
         public int completedPageNumber { get; set; }
+        public int homeEventPageNumber { get; set; }
+        public bool homeEventHasMore { get; set; }
         public Dictionary<string, IEvent> eventsDict { get; set; }
         public List<IEvent> eventHistory { get; set; }
         public bool eventDetailLoading { get; set; }

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     public class WebViewManager {
         internal WebViewManager() {
         }
@@ -22,7 +22,7 @@ namespace ConnectApp.components {
             return instance.webView;
         }
 
-        public void destroyWebView() {
+        public static void destroyWebView() {
             Object.Destroy(instance.webView);
         }
 

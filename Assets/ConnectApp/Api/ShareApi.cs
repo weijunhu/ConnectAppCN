@@ -1,46 +1,23 @@
 using System;
-using System.Collections;
+using ConnectApp.Utils;
 using RSG;
-using Unity.UIWidgets.async;
-using Unity.UIWidgets.ui;
 using UnityEngine;
-using UnityEngine.Networking;
 
-namespace ConnectApp.api {
+namespace ConnectApp.Api {
     public static class ShareApi {
         public static Promise<byte[]> FetchImageBytes(string url) {
-            // We return a promise instantly and start the coroutine to do the real work
             var promise = new Promise<byte[]>();
-            Window.instance.startCoroutine(_FetchImageBytes(promise, url));
-            return promise;
-        }
-
-        static IEnumerator
-            _FetchImageBytes(Promise<byte[]> promise, string url) {
-            var request = UnityWebRequestTexture.GetTexture(url);
-            request.SetRequestHeader("X-Requested-With", "XmlHttpRequest");
-            yield return request.SendWebRequest();
-
-            if (request.isNetworkError) {
-                // something went wrong
-                promise.Reject(new Exception(request.error));
-            }
-            else if (request.responseCode != 200) {
-                // or the response is not OK
-                promise.Reject(new Exception(request.downloadHandler.text));
-            }
-            else {
+            HttpManager.DownloadImage(url: url).Then(responseText => {
                 if (url.EndsWith(".jpg") || url.EndsWith(".png")) {
                     var quality = 75;
-                    var texture = ((DownloadHandlerTexture) request.downloadHandler).texture;
-                    var data = texture.EncodeToJPG(quality);
+                    var data = responseText.EncodeToJPG(quality: quality);
                     while (data.Length > 32 * 1024) {
                         quality -= 1;
-                        data = texture.EncodeToJPG(quality);
+                        data = responseText.EncodeToJPG(quality: quality);
                     }
 
                     if (data != null) {
-                        promise.Resolve(data);
+                        promise.Resolve(value: data);
                     }
                     else {
                         promise.Reject(new Exception("No user under this username found!"));
@@ -49,7 +26,8 @@ namespace ConnectApp.api {
                 else {
                     promise.Reject(new Exception("no picture"));
                 }
-            }
+            }).Catch(exception => promise.Reject(ex: exception));
+            return promise;
         }
     }
 }

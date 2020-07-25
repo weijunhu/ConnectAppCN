@@ -1,6 +1,7 @@
 using System;
+using System.Collections.Generic;
 
-namespace ConnectApp.models {
+namespace ConnectApp.Models.Model {
     [Serializable]
     public class Reaction {
         public string id;
@@ -9,5 +10,7 @@ namespace ConnectApp.models {
         public string channelId;
         public User user;
         public DateTime updatedTime;
+        public int count;
+        public Dictionary<string, int> likeEmoji;
     }
 }

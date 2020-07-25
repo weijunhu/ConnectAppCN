@@ -1,44 +1,62 @@
-using System;
 using System.Collections.Generic;
-using ConnectApp.components;
-using ConnectApp.components.pull_to_refresh;
-using ConnectApp.constants;
-using ConnectApp.models;
+using ConnectApp.Components;
+using ConnectApp.Components.pull_to_refresh;
+using ConnectApp.Constants;
+using ConnectApp.Main;
 using ConnectApp.Models.ActionModel;
+using ConnectApp.Models.Model;
+using ConnectApp.Models.State;
 using ConnectApp.Models.ViewModel;
 using ConnectApp.redux.actions;
-using ConnectApp.utils;
+using ConnectApp.Utils;
 using RSG;
 using Unity.UIWidgets.foundation;
-using Unity.UIWidgets.painting;
 using Unity.UIWidgets.Redux;
-using Unity.UIWidgets.rendering;
 using Unity.UIWidgets.scheduler;
 using Unity.UIWidgets.widgets;
 
 namespace ConnectApp.screens {
     public class NotificationScreenConnector : StatelessWidget {
+        public NotificationScreenConnector(
+            Key key = null
+        ) : base(key: key) {
+        }
+
         public override Widget build(BuildContext context) {
             return new StoreConnector<AppState, NotificationScreenViewModel>(
                 converter: state => new NotificationScreenViewModel {
                     notificationLoading = state.notificationState.loading,
-                    total = state.notificationState.total,
+                    page = state.notificationState.page,
+                    pageTotal = state.notificationState.pageTotal,
                     notifications = state.notificationState.notifications,
-                    userDict = state.userState.userDict
+                    mentions = state.notificationState.mentions,
+                    userDict = state.userState.userDict,
+                    teamDict = state.teamState.teamDict
                 },
                 builder: (context1, viewModel, dispatcher) => {
                     var actionModel = new NotificationScreenActionModel {
                         startFetchNotifications = () => dispatcher.dispatch(new StartFetchNotificationsAction()),
                         fetchNotifications = pageNumber =>
-                            dispatcher.dispatch<IPromise>(Actions.fetchNotifications(pageNumber)),
+                            dispatcher.dispatch<IPromise>(Actions.fetchNotifications(pageNumber: pageNumber)),
                         fetchMakeAllSeen = () => dispatcher.dispatch<IPromise>(Actions.fetchMakeAllSeen()),
+                        mainRouterPop = () => dispatcher.dispatch(new MainNavigatorPopAction()),
                         pushToArticleDetail = id => dispatcher.dispatch(
                             new MainNavigatorPushToArticleDetailAction {
                                 articleId = id
                             }
+                        ),
+                        pushToUserDetail = userId => dispatcher.dispatch(
+                            new MainNavigatorPushToUserDetailAction {
+                                userId = userId
+                            }
+                        ),
+                        pushToTeamDetail = teamId => dispatcher.dispatch(
+                            new MainNavigatorPushToTeamDetailAction {
+                                teamId = teamId
+                            }
                         )
                     };
-                    return new NotificationScreen(viewModel, actionModel);
+                    return new NotificationScreen(viewModel: viewModel, actionModel: actionModel);
                 }
             );
         }
@@ -49,7 +67,7 @@ namespace ConnectApp.screens {
             NotificationScreenViewModel viewModel = null,
             NotificationScreenActionModel actionModel = null,
             Key key = null
-        ) : base(key) {
+        ) : base(key: key) {
             this.viewModel = viewModel;
             this.actionModel = actionModel;
         }
@@ -62,167 +80,157 @@ namespace ConnectApp.screens {
         }
     }
 
-    public class _NotificationScreenState : AutomaticKeepAliveClientMixin<NotificationScreen> {
+    public class _NotificationScreenState : State<NotificationScreen>, RouteAware {
         const int firstPageNumber = 1;
-        int _pageNumber = firstPageNumber;
+        int notificationPageNumber = firstPageNumber;
         RefreshController _refreshController;
-        TextStyle titleStyle;
-        const float maxNavBarHeight = 96;
-        const float minNavBarHeight = 44;
-        float navBarHeight;
-        string _loginSubId;
-        string _refreshSubId;
-
-
-        protected override bool wantKeepAlive {
-            get { return true; }
-        }
 
         public override void initState() {
             base.initState();
+            StatusBarManager.statusBarStyle(false);
             this._refreshController = new RefreshController();
-            this.navBarHeight = maxNavBarHeight;
-            this.titleStyle = CTextStyle.H2;
             SchedulerBinding.instance.addPostFrameCallback(_ => {
                 this.widget.actionModel.startFetchNotifications();
-                this.widget.actionModel.fetchNotifications(firstPageNumber);
-            });
-            this._loginSubId = EventBus.subscribe(EventBusConstant.login_success, args => {
-                this.navBarHeight = maxNavBarHeight;
-                this.titleStyle = CTextStyle.H2;
-                this.widget.actionModel.startFetchNotifications();
-                this.widget.actionModel.fetchNotifications(firstPageNumber);
-            });
-            this._refreshSubId = EventBus.subscribe(EventBusConstant.refreshNotifications, args => {
-                this.navBarHeight = maxNavBarHeight;
-                this.titleStyle = CTextStyle.H2;
-                this.widget.actionModel.startFetchNotifications();
-                this.widget.actionModel.fetchNotifications(firstPageNumber);
+                this.widget.actionModel.fetchNotifications(arg: firstPageNumber);
             });
         }
 
+        public override void didChangeDependencies() {
+            base.didChangeDependencies();
+            Router.routeObserve.subscribe(this, (PageRoute) ModalRoute.of(context: this.context));
+        }
+
         public override void dispose() {
-            EventBus.unSubscribe(EventBusConstant.login_success, this._loginSubId);
-            EventBus.unSubscribe(EventBusConstant.refreshNotifications, this._refreshSubId);
+            Router.routeObserve.unsubscribe(this);
             base.dispose();
         }
 
         public override Widget build(BuildContext context) {
-            base.build(context);
-            Widget content = new Container();
-            if (this.widget.viewModel.notificationLoading && this.widget.viewModel.notifications.Count == 0) {
+            Widget content;
+            var notifications = this.widget.viewModel.notifications;
+            if (this.widget.viewModel.notificationLoading && 0 == notifications.Count) {
                 content = new GlobalLoading();
             }
+            else if (0 == notifications.Count) {
+                content = new BlankView(
+                    "好冷清，多和小伙伴们互动呀",
+                    "image/default-notification",
+                    true,
+                    () => {
+                        this.widget.actionModel.startFetchNotifications();
+                        this.widget.actionModel.fetchNotifications(arg: firstPageNumber);
+                    }
+                );
+            }
             else {
-                if (this.widget.viewModel.notifications.Count <= 0) {
-                    content = new Container(
-                        child: new BlankView("暂无通知消息", true, () => {
-                            this.widget.actionModel.startFetchNotifications();
-                            this.widget.actionModel.fetchNotifications(firstPageNumber);
-                        })
-                    );
-                }
-                else {
-                    content = new Container(
-                        color: CColors.background3,
-                        child: new SmartRefresher(
-                            controller: this._refreshController,
-                            enablePullDown: true,
-                            enablePullUp: this.widget.viewModel.notifications.Count < this.widget.viewModel.total,
-                            onRefresh: this._onRefresh,
-                            child: ListView.builder(
-                                physics: new AlwaysScrollableScrollPhysics(),
-                                itemCount: this.widget.viewModel.notifications.Count,
-                                itemBuilder: (cxt, index) => {
-                                    var notification = this.widget.viewModel.notifications[index];
-                                    var user = this.widget.viewModel.userDict[notification.data.userId];
-                                    return new NotificationCard(
-                                        notification,
-                                        user,
-                                        () => this.widget.actionModel.pushToArticleDetail(notification.data.projectId),
-                                        new ObjectKey(notification.id)
-                                    );
-                                }
-                            )
-                        )
-                    );
-                }
+                var enablePullUp = this.widget.viewModel.page < this.widget.viewModel.pageTotal;
+                content = new Container(
+                    color: CColors.Background,
+                    child: new CustomListView(
+                        controller: this._refreshController,
+                        enablePullDown: true,
+                        enablePullUp: enablePullUp,
+                        onRefresh: this._onRefresh,
+                        itemCount: notifications.Count,
+                        itemBuilder: this._buildNotificationCard,
+                        footerWidget: enablePullUp ? null : CustomListViewConstant.defaultFooterWidget,
+                        hasScrollBar: false
+                    )
+                );
             }
 
             return new Container(
                 color: CColors.White,
-                child: new Column(
-                    children: new List<Widget> {
-                        new AnimatedContainer(
-                            height: this.navBarHeight,
-                            duration: new TimeSpan(0, 0, 0, 0, 0),
-                            child: new Row(
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: new List<Widget> {
-                                    new Container(
-                                        padding: EdgeInsets.only(16, bottom: 8),
-                                        child: new AnimatedDefaultTextStyle(
-                                            child: new Text("通知"),
-                                            style: this.titleStyle,
-                                            duration: new TimeSpan(0, 0, 0, 0, 100)
-                                        )
-                                    )
-                                }
+                child: new CustomSafeArea(
+                    bottom: false,
+                    child: new Column(
+                        children: new List<Widget> {
+                            this._buildNavigationBar(),
+                            new CustomDivider(
+                                color: CColors.Separator2,
+                                height: 1
+                            ),
+                            new Flexible(
+                                child: new CustomScrollbar(child: content)
                             )
-                        ),
-                        new CustomDivider(
-                            color: CColors.Separator2,
-                            height: 1
-                        ),
-                        new Flexible(
-                            child: new NotificationListener<ScrollNotification>(
-                                onNotification: this._onNotification,
-                                child: content
-                            )
-                        )
-                    }
+                        }
+                    )
                 )
             );
         }
 
-        bool _onNotification(ScrollNotification notification) {
-            var pixels = notification.metrics.pixels;
-            SchedulerBinding.instance.addPostFrameCallback(_ => {
-                if (pixels > 0 && pixels <= 52) {
-                    this.titleStyle = CTextStyle.H5;
-                    this.navBarHeight = maxNavBarHeight - pixels;
-                    this.setState(() => { });
-                }
-                else if (pixels <= 0) {
-                    if (this.navBarHeight <= maxNavBarHeight) {
-                        this.titleStyle = CTextStyle.H2;
-                        this.navBarHeight = maxNavBarHeight;
-                        this.setState(() => { });
+        Widget _buildNavigationBar() {
+            return new CustomNavigationBar(
+                new Text(
+                    "通知",
+                    style: CTextStyle.H2
+                ),
+                onBack: () => this.widget.actionModel.mainRouterPop()
+            );
+        }
+
+        Widget _buildNotificationCard(BuildContext context, int index) {
+            var notifications = this.widget.viewModel.notifications;
+
+            var notification = notifications[index: index];
+            if (notification.data.userId.isEmpty() && notification.data.role.Equals("user")) {
+                return new Container();
+            }
+
+            User user;
+            Team team;
+            if (notification.type == "project_article_publish" && notification.data.role == "team") {
+                user = null;
+                team = this.widget.viewModel.teamDict[key: notification.data.teamId];
+            }
+            else {
+                user = this.widget.viewModel.userDict[key: notification.data.userId];
+                team = null;
+            }
+
+            return new NotificationCard(
+                notification: notification,
+                user: user,
+                team: team,
+                mentions: this.widget.viewModel.mentions,
+                () => {
+                    if (notification.type == "followed" || notification.type == "team_followed") {
+                        this.widget.actionModel.pushToUserDetail(obj: notification.data.userId);
                     }
-                }
-                else if (pixels > 52) {
-                    if (!(this.navBarHeight <= minNavBarHeight)) {
-                        this.titleStyle = CTextStyle.H5;
-                        this.navBarHeight = minNavBarHeight;
-                        this.setState(() => { });
+                    else {
+                        this.widget.actionModel.pushToArticleDetail(obj: notification.data.projectId);
+                        AnalyticsManager.ClickEnterArticleDetail(
+                            "Notification_Article",
+                            articleId: notification.data.projectId,
+                            articleTitle: notification.data.projectTitle
+                        );
                     }
-                }
-            });
-            return true;
+                },
+                pushToUserDetail: this.widget.actionModel.pushToUserDetail,
+                pushToTeamDetail: this.widget.actionModel.pushToTeamDetail,
+                index == notifications.Count - 1,
+                new ObjectKey(value: notification.id)
+            );
         }
 
         void _onRefresh(bool up) {
-            if (up) {
-                this._pageNumber = firstPageNumber;
-            }
-            else {
-                this._pageNumber++;
-            }
+            this.notificationPageNumber = up ? firstPageNumber : this.notificationPageNumber + 1;
+            this.widget.actionModel.fetchNotifications(arg: this.notificationPageNumber)
+                .Then(() => this._refreshController.sendBack(up: up, up ? RefreshStatus.completed : RefreshStatus.idle))
+                .Catch(_ => this._refreshController.sendBack(up: up, mode: RefreshStatus.failed));
+        }
 
-            this.widget.actionModel.fetchNotifications(this._pageNumber)
-                .Then(() => this._refreshController.sendBack(up, up ? RefreshStatus.completed : RefreshStatus.idle))
-                .Catch(_ => this._refreshController.sendBack(up, RefreshStatus.failed));
+        public void didPopNext() {
+            StatusBarManager.statusBarStyle(false);
+        }
+
+        public void didPush() {
+        }
+
+        public void didPop() {
+        }
+
+        public void didPushNext() {
         }
     }
 }

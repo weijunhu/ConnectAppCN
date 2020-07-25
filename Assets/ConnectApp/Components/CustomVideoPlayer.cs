@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using ConnectApp.constants;
-using ConnectApp.utils;
+using ConnectApp.Constants;
+using ConnectApp.Utils;
 using RSG;
 using Unity.UIWidgets.async;
 using Unity.UIWidgets.foundation;
@@ -13,11 +13,12 @@ using UnityEngine;
 using UnityEngine.Video;
 using Color = Unity.UIWidgets.ui.Color;
 using Texture = Unity.UIWidgets.widgets.Texture;
+#if UNITY_IOS
+using System.Runtime.InteropServices;
+#endif
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     public delegate void FullScreenCallback(bool isFullScreen);
-
-    public delegate void FailureCallback();
 
     public enum PlayState {
         play,
@@ -34,7 +35,7 @@ namespace ConnectApp.components {
             float recordDuration = 0,
             bool isAutoPlay = false,
             Key key = null
-        ) : base(key) {
+        ) : base(key: key) {
             D.assert(url != null);
             this.url = url;
             this.recordDuration = recordDuration;
@@ -58,8 +59,8 @@ namespace ConnectApp.components {
     }
 
     public class _CustomVideoPlayerState : State<CustomVideoPlayer> {
-        VideoPlayer _player = null;
-        RenderTexture _texture = null;
+        VideoPlayer _player;
+        RenderTexture _texture;
         PlayState _playState = PlayState.pause;
         float _relative; //播放进度比例
         bool _isFullScreen; //是否全屏
@@ -68,10 +69,15 @@ namespace ConnectApp.components {
         bool _isFailure; //加载失败
         bool _isLoaded; //加载完成，用来隐藏loading
         string _pauseVideoPlayerSubId; //收到通知暂停播放
+        string _fullScreenSubId;
+        string _changeOrientationSubId;
         Timer m_Timer;
+        const int _toolBarHeight = 64;
 
         public override void initState() {
             base.initState();
+            Screen.sleepTimeout = SleepTimeout.NeverSleep;
+            VideoPlayerManager.instance.isRotation = true;
             this._texture = Resources.Load<RenderTexture>("texture/ConnectAppRT");
             this._player = this._videoPlayer(this.widget.url);
             this._pauseVideoPlayerSubId = EventBus.subscribe(EventBusConstant.pauseVideoPlayer, args => {
@@ -83,13 +89,25 @@ namespace ConnectApp.components {
                     this.setState(() => { });
                 }
             });
+            this._fullScreenSubId = EventBus.subscribe(EventBusConstant.fullScreen, args => {
+                this._isFullScreen = (bool) args[0];
+                this._setScreenOrientation();
+            });
+            this._changeOrientationSubId = EventBus.subscribe(EventBusConstant.changeOrientation, args => {
+                var orientation = (ScreenOrientation) args[0];
+                this._changeOrientation(orientation);
+            });
         }
 
         public override void dispose() {
+            Screen.sleepTimeout = SleepTimeout.SystemSetting;
+            VideoPlayerManager.instance.isRotation = false;
             EventBus.unSubscribe(EventBusConstant.pauseVideoPlayer, this._pauseVideoPlayerSubId);
+            EventBus.unSubscribe(EventBusConstant.fullScreen, this._fullScreenSubId);
+            EventBus.unSubscribe(EventBusConstant.changeOrientation, this._changeOrientationSubId);
             this._player.targetTexture.Release();
             this._player.Stop();
-            VideoPlayerManager.instance.destroyPlayer();
+            VideoPlayerManager.destroyPlayer();
             this.m_Timer?.cancel();
             this.m_Timer?.Dispose();
             base.dispose();
@@ -128,7 +146,7 @@ namespace ConnectApp.components {
                             child: new CustomActivityIndicator(loadingColor: LoadingColor.white)
                         ),
                     this._isHiddenBar
-                        ? new Positioned(child: new Container())
+                        ? new Positioned(new Container())
                         : new Positioned(top: 0, left: 0, right: 0, child: this._isFullScreen
                             ? new Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -149,21 +167,21 @@ namespace ConnectApp.components {
                             )
                             : this.widget.topWidget),
                     this._isHiddenBar
-                        ? new Positioned(child: new Container())
+                        ? new Positioned(new Container())
                         : new Positioned(
                             bottom: 0,
                             left: 0,
                             right: 0,
                             child: this._isFailure
                                 ? new Container(
-                                    height: 44,
+                                    height: _toolBarHeight,
                                     padding: EdgeInsets.only(top: 0, left: 8),
                                     color: Color.fromRGBO(0, 0, 0, 0.2f),
                                     child: new Row(children: new List<Widget> {
                                         new GestureDetector(
                                             child: new Container(
-                                                height: 44,
-                                                width: 44,
+                                                height: _toolBarHeight,
+                                                width: _toolBarHeight,
                                                 color: CColors.Transparent,
                                                 child: new Icon(Icons.replay, size: 24, color: CColors.White)
                                             ),
@@ -176,7 +194,7 @@ namespace ConnectApp.components {
                                         ))
                                     }))
                                 : new Container(
-                                    height: 44,
+                                    height: _toolBarHeight,
                                     decoration: new BoxDecoration(gradient: new LinearGradient(
                                         colors: new List<Color> {
                                             Color.fromRGBO(0, 0, 0, 0),
@@ -191,8 +209,8 @@ namespace ConnectApp.components {
                                         children: new List<Widget> {
                                             new GestureDetector(
                                                 child: new Container(
-                                                    height: 44,
-                                                    width: 44,
+                                                    height: _toolBarHeight,
+                                                    width: _toolBarHeight,
                                                     color: CColors.Transparent,
                                                     child: new Icon(iconData, size: 24, color: CColors.White)
                                                 ),
@@ -230,8 +248,8 @@ namespace ConnectApp.components {
                                                     style: CTextStyle.CaptionWhite)),
                                             new GestureDetector(
                                                 child: new Container(
-                                                    height: 44,
-                                                    width: 44,
+                                                    height: _toolBarHeight,
+                                                    width: _toolBarHeight,
                                                     color: CColors.Transparent,
                                                     child: new Icon(
                                                         this._isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
@@ -273,6 +291,7 @@ namespace ConnectApp.components {
             player.prepareCompleted += this.prepareCompleted;
             player.frameReady += (source, frameIndex) => {
                 using (WindowProvider.of(this.widget.context).getScope()) {
+                    _pauseAudioSession();
                     Texture.textureFrameAvailable();
                     if (this._relative * source.frameCount < frameIndex || frameIndex == 0) {
                         this._isLoaded = true;
@@ -289,7 +308,11 @@ namespace ConnectApp.components {
                     }
 
                     if (frameIndex == 0) {
-                        Promise.Delayed(TimeSpan.FromMilliseconds(200)).Then(() => { this.setState(() => { }); });
+                        Promise.Delayed(TimeSpan.FromMilliseconds(200)).Then(() => {
+                            if (this.mounted) {
+                                this.setState(() => {});
+                            }
+                        });
                     }
                     else {
                         this.setState(() => { });
@@ -324,6 +347,7 @@ namespace ConnectApp.components {
                 this._playState = PlayState.play;
             }
 
+            this.cancelTimer();
             this.setState(() => { });
         }
 
@@ -371,18 +395,90 @@ namespace ConnectApp.components {
 
         void _setScreenOrientation() {
             this.cancelTimer();
-            this._isFullScreen = !this._isFullScreen;
+            using (WindowProvider.of(this.widget.context).getScope()) {
+                if (!this._isFullScreen) {
+                    VideoPlayerManager.instance.lockPortrait = true;
+                    Screen.orientation = ScreenOrientation.LandscapeLeft;
+                    this._isFullScreen = true;
+                }
+                else {
+                    VideoPlayerManager.instance.lockLandscape = true;
+                    Screen.orientation = ScreenOrientation.Portrait;
+                    this._isFullScreen = false;
+                }
 
-            if (this._isFullScreen) {
-                Screen.orientation = ScreenOrientation.LandscapeLeft;
-            }
-            else {
-                Screen.orientation = ScreenOrientation.Portrait;
-            }
-
-            if (this.widget.fullScreenCallback != null) {
-                this.widget.fullScreenCallback(this._isFullScreen);
+                if (this.widget.fullScreenCallback != null) {
+                    this.widget.fullScreenCallback(this._isFullScreen);
+                }
             }
         }
+
+        void _changeOrientation(ScreenOrientation orientation) {
+            if (!_isOpenSensor()) {
+                return;
+            }
+
+            this.cancelTimer();
+            using (WindowProvider.of(this.widget.context).getScope()) {
+                if (orientation == ScreenOrientation.Portrait) {
+                    Screen.orientation = ScreenOrientation.Portrait;
+                    this._isFullScreen = false;
+                }
+                else {
+                    Screen.orientation = orientation;
+                    this._isFullScreen = true;
+                }
+
+                if (this.widget.fullScreenCallback != null) {
+                    this.widget.fullScreenCallback(this._isFullScreen);
+                }
+            }
+        }
+
+        static void _pauseAudioSession() {
+            if (!Application.isEditor) {
+                pauseAudioSession();
+            }
+        }
+
+        static bool _isOpenSensor() {
+            if (Application.platform == RuntimePlatform.Android) {
+                return isOpenSensor();
+            }
+
+            return true;
+        }
+#if UNITY_IOS
+        [DllImport("__Internal")]
+        static extern void pauseAudioSession();
+
+        [DllImport("__Internal")]
+        static extern bool isOpenSensor();
+
+#elif UNITY_ANDROID
+        static AndroidJavaClass _plugin;
+
+        static AndroidJavaClass Plugin() {
+            if (_plugin == null) {
+                _plugin = new AndroidJavaClass("com.unity3d.unityconnect.plugins.CommonPlugin");
+            }
+
+            return _plugin;
+        }
+
+        static void pauseAudioSession() {
+            Plugin().CallStatic("pauseAudioSession");
+        }
+
+        static bool isOpenSensor() {
+            return Plugin().CallStatic<bool>("isOpenSensor");
+        }
+#else
+        static void pauseAudioSession() {
+        }
+        static bool isOpenSensor() {
+            return false;
+        }
+#endif
     }
 }

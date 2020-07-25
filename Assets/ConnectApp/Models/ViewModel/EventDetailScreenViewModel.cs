@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using ConnectApp.models;
+using ConnectApp.Models.Model;
 
 namespace ConnectApp.Models.ViewModel {
     public class EventDetailScreenViewModel {
@@ -16,5 +16,6 @@ namespace ConnectApp.Models.ViewModel {
         public bool sendMessageLoading;
         public Dictionary<string, Dictionary<string, Message>> channelMessageDict;
         public Dictionary<string, IEvent> eventsDict;
+        public Dictionary<string, UserLicense> userLicenseDict;
     }
 }

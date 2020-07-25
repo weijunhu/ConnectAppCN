@@ -1,18 +1,18 @@
 using System.Collections.Generic;
-using ConnectApp.constants;
-using ConnectApp.models;
-using ConnectApp.utils;
+using ConnectApp.Constants;
+using ConnectApp.Models.Model;
+using ConnectApp.Utils;
 using Unity.UIWidgets.foundation;
 using Unity.UIWidgets.painting;
 using Unity.UIWidgets.rendering;
 using Unity.UIWidgets.widgets;
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     public class ChatMessage : StatelessWidget {
         public ChatMessage(
             Message message,
             Key key = null
-        ) : base(key) {
+        ) : base(key: key) {
             this.message = message;
         }
 
@@ -32,7 +32,7 @@ namespace ConnectApp.components {
                 child: new Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: new List<Widget> {
-                        Avatar.User(this.message.author.id, this.message.author, 24),
+                        Avatar.User(author, 24),
                         new Expanded(
                             child: new Container(
                                 margin: EdgeInsets.only(8),

@@ -1,16 +1,14 @@
-using System;
 using System.Collections.Generic;
-using ConnectApp.components;
-using ConnectApp.constants;
-using ConnectApp.models;
+using ConnectApp.Components;
+using ConnectApp.Constants;
 using ConnectApp.Models.ActionModel;
+using ConnectApp.Models.State;
 using ConnectApp.Models.ViewModel;
 using ConnectApp.redux.actions;
-using Unity.UIWidgets.animation;
+using ConnectApp.Utils;
 using Unity.UIWidgets.foundation;
 using Unity.UIWidgets.painting;
 using Unity.UIWidgets.Redux;
-using Unity.UIWidgets.rendering;
 using Unity.UIWidgets.widgets;
 
 namespace ConnectApp.screens {
@@ -27,7 +25,7 @@ namespace ConnectApp.screens {
                         deleteAllArticleHistory = () => dispatcher.dispatch(new DeleteAllArticleHistoryAction()),
                         deleteAllEventHistory = () => dispatcher.dispatch(new DeleteAllEventHistoryAction())
                     };
-                    return new HistoryScreen(viewModel, actionModel);
+                    return new HistoryScreen(viewModel: viewModel, actionModel: actionModel);
                 }
             );
         }
@@ -38,7 +36,7 @@ namespace ConnectApp.screens {
             HistoryScreenViewModel viewModel = null,
             HistoryScreenActionModel actionModel = null,
             Key key = null
-        ) : base(key) {
+        ) : base(key: key) {
             this.viewModel = viewModel;
             this.actionModel = actionModel;
         }
@@ -52,18 +50,12 @@ namespace ConnectApp.screens {
     }
 
     class _HistoryScreenState : State<HistoryScreen> {
-        PageController _pageController;
         int _selectedIndex;
 
         public override void initState() {
             base.initState();
-            this._pageController = new PageController();
+            StatusBarManager.statusBarStyle(false);
             this._selectedIndex = 0;
-        }
-
-        public override void dispose() {
-            this._pageController.dispose();
-            base.dispose();
         }
 
         void _deleteAllHistory() {
@@ -72,7 +64,7 @@ namespace ConnectApp.screens {
                 items: new List<ActionSheetItem> {
                     new ActionSheetItem(
                         "删除",
-                        ActionType.destructive,
+                        type: ActionType.destructive,
                         () => {
                             if (this._selectedIndex == 0) {
                                 this.widget.actionModel.deleteAllArticleHistory();
@@ -81,7 +73,7 @@ namespace ConnectApp.screens {
                                 this.widget.actionModel.deleteAllEventHistory();
                             }
                         }),
-                    new ActionSheetItem("取消", ActionType.cancel)
+                    new ActionSheetItem("取消", type: ActionType.cancel)
                 }
             ));
         }
@@ -90,13 +82,15 @@ namespace ConnectApp.screens {
             return new Container(
                 color: CColors.White,
                 child: new CustomSafeArea(
+                    bottom: false,
                     child: new Container(
                         color: CColors.White,
                         child: new Column(
                             children: new List<Widget> {
-                                this._buildNavigationBar(context),
-                                this._buildSelectView(),
-                                this._buildContentView()
+                                this._buildNavigationBar(),
+                                new Expanded(
+                                    child: this._buildContentView()
+                                )
                             }
                         )
                     )
@@ -104,41 +98,17 @@ namespace ConnectApp.screens {
             );
         }
 
-        Widget _buildNavigationBar(BuildContext context) {
-            return new Container(
-                decoration: new BoxDecoration(
-                    CColors.White
+        Widget _buildNavigationBar() {
+            return new CustomNavigationBar(
+                new Text(
+                    "浏览历史",
+                    style: CTextStyle.H2
                 ),
-                width: MediaQuery.of(context).size.width,
-                height: 94,
-                child: new Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: new List<Widget> {
-                        new CustomButton(
-                            padding: EdgeInsets.symmetric(8, 16),
-                            onPressed: () => this.widget.actionModel.mainRouterPop(),
-                            child: new Icon(
-                                Icons.arrow_back,
-                                size: 24,
-                                color: CColors.icon3
-                            )
-                        ),
-                        new Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: new List<Widget> {
-                                new Container(
-                                    margin: EdgeInsets.only(16, bottom: 12),
-                                    child: new Text(
-                                        "浏览历史",
-                                        style: CTextStyle.H2
-                                    )
-                                ),
-                                this._buildDeleteButton()
-                            }
-                        )
-                    }
-                )
+                new List<Widget> {
+                    this._buildDeleteButton()
+                },
+                padding: EdgeInsets.only(16, bottom: 8),
+                onBack: () => this.widget.actionModel.mainRouterPop()
             );
         }
 
@@ -150,9 +120,9 @@ namespace ConnectApp.screens {
                         padding: EdgeInsets.symmetric(12, 16),
                         onPressed: this._deleteAllHistory,
                         child: new Icon(
-                            Icons.delete_outline,
+                            icon: Icons.delete_outline,
                             size: 28,
-                            color: CColors.icon3
+                            color: CColors.Icon
                         )
                     );
                 }
@@ -165,9 +135,9 @@ namespace ConnectApp.screens {
                         padding: EdgeInsets.symmetric(12, 16),
                         onPressed: this._deleteAllHistory,
                         child: new Icon(
-                            Icons.delete_outline,
+                            icon: Icons.delete_outline,
                             size: 28,
-                            color: CColors.icon3
+                            color: CColors.Icon
                         )
                     );
                 }
@@ -176,33 +146,14 @@ namespace ConnectApp.screens {
             return new Container();
         }
 
-        Widget _buildSelectView() {
-            return new CustomSegmentedControl(
-                new List<string> {"文章", "活动"},
-                newValue => {
-                    this.setState(() => this._selectedIndex = newValue);
-                    this._pageController.animateToPage(
-                        newValue,
-                        new TimeSpan(0, 0, 0, 0, 250),
-                        Curves.ease
-                    );
-                }, this._selectedIndex
-            );
-        }
-
         Widget _buildContentView() {
-            return new Flexible(
-                child: new Container(
-                    child: new PageView(
-                        physics: new BouncingScrollPhysics(),
-                        controller: this._pageController,
-                        onPageChanged: index => { this.setState(() => { this._selectedIndex = index; }); },
-                        children: new List<Widget> {
-                            new HistoryArticleScreenConnector(),
-                            new HistoryEventScreenConnector()
-                        }
-                    )
-                )
+            return new CustomSegmentedControl(
+                new List<object> {"文章", "活动"},
+                new List<Widget> {
+                    new HistoryArticleScreenConnector(),
+                    new HistoryEventScreenConnector()
+                },
+                newValue => this.setState(() => this._selectedIndex = newValue)
             );
         }
     }

@@ -2,7 +2,7 @@ using Unity.UIWidgets.foundation;
 using Unity.UIWidgets.widgets;
 using UnityEngine;
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     public class CustomSafeArea : StatelessWidget {
         public CustomSafeArea(
             Key key = null,
@@ -16,11 +16,9 @@ namespace ConnectApp.components {
             this.bottom = bottom;
         }
 
-
         readonly Widget child;
         readonly bool top;
         readonly bool bottom;
-
 
         public override Widget build(BuildContext context) {
             bool topValue = Application.platform != RuntimePlatform.Android;

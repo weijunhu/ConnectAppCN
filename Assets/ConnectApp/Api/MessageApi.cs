@@ -1,26 +1,28 @@
-using System.Text;
-using ConnectApp.constants;
-using ConnectApp.models;
-using ConnectApp.utils;
+using System.Collections.Generic;
+using ConnectApp.Constants;
+using ConnectApp.Models.Api;
+using ConnectApp.Utils;
 using Newtonsoft.Json;
 using RSG;
 using Unity.UIWidgets.foundation;
-using UnityEngine.Networking;
+using UnityEngine;
 
-namespace ConnectApp.api {
+namespace ConnectApp.Api {
     public static class MessageApi {
+        
         public static Promise<FetchCommentsResponse> FetchMessages(string channelId, string currOldestMessageId) {
             var promise = new Promise<FetchCommentsResponse>();
-            var url = Config.apiAddress + "/api/channels/" + channelId + "/messages";
+            var para = new Dictionary<string, object> ();
             if (currOldestMessageId.isNotEmpty()) {
-                url += "?before=" + currOldestMessageId;
+                para.Add("before", value: currOldestMessageId);
             }
 
-            var request = HttpManager.GET(url);
-            HttpManager.resume(request).Then(responseText => {
-                var messagesResponse = JsonConvert.DeserializeObject<FetchCommentsResponse>(responseText);
-                promise.Resolve(messagesResponse);
-            }).Catch(exception => { promise.Reject(exception); });
+            var request = HttpManager.GET($"{Config.apiAddress_cn}{Config.apiPath}/channels/{channelId}/messages",
+                parameter: para);
+            HttpManager.resume(request: request).Then(responseText => {
+                var messagesResponse = JsonConvert.DeserializeObject<FetchCommentsResponse>(value: responseText);
+                promise.Resolve(value: messagesResponse);
+            }).Catch(exception => promise.Reject(ex: exception));
             return promise;
         }
 
@@ -32,20 +34,16 @@ namespace ConnectApp.api {
                 parentMessageId = parentMessageId,
                 nonce = nonce
             };
-            var body = JsonConvert.SerializeObject(para);
-            var request =
-                HttpManager.initRequest(Config.apiAddress + "/api/channels/" + channelId + "/messages", Method.POST);
-            var bodyRaw = Encoding.UTF8.GetBytes(body);
-            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
-            request.SetRequestHeader("Content-Type", "application/json");
-            HttpManager.resume(request).Then(responseText => {
+            var request = HttpManager.POST($"{Config.apiAddress_cn}{Config.apiPath}/channels/{channelId}/messages",
+                parameter: para);
+            HttpManager.resume(request: request).Then(responseText => {
                 var sendMessageResponse = new FetchSendMessageResponse {
                     channelId = channelId,
                     content = content,
                     nonce = nonce
                 };
-                promise.Resolve(sendMessageResponse);
-            }).Catch(exception => { promise.Reject(exception); });
+                promise.Resolve(value: sendMessageResponse);
+            }).Catch(exception => promise.Reject(ex: exception));
             return promise;
         }
     }

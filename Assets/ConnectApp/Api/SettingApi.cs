@@ -1,31 +1,38 @@
 using System.Collections.Generic;
-using ConnectApp.constants;
-using ConnectApp.utils;
+using ConnectApp.Constants;
+using ConnectApp.Models.Api;
+using ConnectApp.Utils;
 using Newtonsoft.Json;
 using RSG;
 
-namespace ConnectApp.api {
+namespace ConnectApp.Api {
     public static class SettingApi {
         public static IPromise<string> FetchReviewUrl(string platform, string store) {
             var promise = new Promise<string>();
-            var request =
-                HttpManager.GET(Config.apiAddress + $"/api/live/reviewUrl?platform={platform}&store={store}");
-            HttpManager.resume(request).Then(responseText => {
-                var urlDictionary = JsonConvert.DeserializeObject<Dictionary<string, string>>(responseText);
+            var para = new Dictionary<string, object> {
+                {"platform", platform},
+                {"store", store}
+            };
+            var request = HttpManager.GET($"{Config.apiAddress_cn}{Config.apiPath}/reviewUrl", parameter: para);
+            HttpManager.resume(request: request).Then(responseText => {
+                var urlDictionary = JsonConvert.DeserializeObject<Dictionary<string, string>>(value: responseText);
                 promise.Resolve(urlDictionary["url"]);
-            }).Catch(exception => { promise.Reject(exception); });
+            }).Catch(exception => promise.Reject(ex: exception));
             return promise;
         }
 
-        public static IPromise<Dictionary<string, string>> FetchVersion(string platform, string store, string version) {
-            var promise = new Promise<Dictionary<string, string>>();
-            var request =
-                HttpManager.GET(Config.apiAddress +
-                                $"/api/live/version?platform={platform}&store={store}&version={version}");
-            HttpManager.resume(request).Then(responseText => {
-                var versionDictionary = JsonConvert.DeserializeObject<Dictionary<string, string>>(responseText);
-                promise.Resolve(versionDictionary);
-            }).Catch(exception => { promise.Reject(exception); });
+        public static IPromise<CheckNewVersionResponse> CheckNewVersion(string platform, string store, string version) {
+            var promise = new Promise<CheckNewVersionResponse>();
+            var para = new Dictionary<string, object> {
+                {"platform", platform},
+                {"store", store},
+                {"version", version}
+            };
+            var request = HttpManager.GET($"{Config.apiAddress_cn}{Config.apiPath}/version", parameter: para);
+            HttpManager.resume(request: request).Then(responseText => {
+                var versionDictionary = JsonConvert.DeserializeObject<CheckNewVersionResponse>(value: responseText);
+                promise.Resolve(value: versionDictionary);
+            }).Catch(exception => promise.Reject(ex: exception));
             return promise;
         }
     }

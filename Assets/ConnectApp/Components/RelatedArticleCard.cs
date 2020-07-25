@@ -1,7 +1,7 @@
 using System.Collections.Generic;
-using ConnectApp.constants;
-using ConnectApp.models;
-using ConnectApp.utils;
+using ConnectApp.Constants;
+using ConnectApp.Models.Model;
+using ConnectApp.Utils;
 using Unity.UIWidgets.foundation;
 using Unity.UIWidgets.gestures;
 using Unity.UIWidgets.painting;
@@ -9,48 +9,21 @@ using Unity.UIWidgets.rendering;
 using Unity.UIWidgets.ui;
 using Unity.UIWidgets.widgets;
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     public class RelatedArticleCard : StatelessWidget {
-        RelatedArticleCard(
+        public RelatedArticleCard(
             Article article,
-            User user = null,
-            Team team = null,
+            string fullName,
             GestureTapCallback onTap = null,
             Key key = null
-        ) : base(key) {
+        ) : base(key: key) {
             this.article = article;
+            this.fullName = fullName;
             this.onTap = onTap;
-            this.user = user;
-            this.team = team;
         }
 
-
-        public static RelatedArticleCard User(
-            Article article,
-            User user = null,
-            GestureTapCallback onTap = null,
-            Key key = null
-        ) {
-            return new RelatedArticleCard(
-                article, user, null, onTap, key
-            );
-        }
-
-        public static RelatedArticleCard Team(
-            Article article,
-            Team team = null,
-            GestureTapCallback onTap = null,
-            Key key = null
-        ) {
-            return new RelatedArticleCard(
-                article, null, team, onTap, key
-            );
-        }
-
-        readonly OwnerType type;
-        readonly User user;
-        readonly Team team;
         readonly Article article;
+        readonly string fullName;
         readonly GestureTapCallback onTap;
 
         public override Widget build(BuildContext context) {
@@ -58,31 +31,39 @@ namespace ConnectApp.components {
                 return new Container();
             }
 
-            var username = this.user == null ? this.team.name : this.user.fullName;
-            var time = this.article.lastPublishedTime == null
-                ? this.article.publishedTime
-                : this.article.lastPublishedTime;
+            const float imageWidth = 114;
+            const float imageHeight = 76;
+            const float borderRadius = 4;
+
+            var time = this.article.publishedTime;
+            var thumbnailUrl = this.article.thumbnail?.url ?? "";
+            var imageUrl = thumbnailUrl.EndsWith(".gif")
+                ? thumbnailUrl
+                : CImageUtils.SuitableSizeImageUrl(imageWidth: imageWidth, imageUrl: thumbnailUrl);
             var child = new Container(
                 color: CColors.White,
                 padding: EdgeInsets.all(16),
+                height: 108,
                 child: new Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: new List<Widget> {
                         new Expanded(
                             child: new Container(
                                 child: new Column(
-                                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: new List<Widget> {
-                                        new Text(this.article.title,
+                                        new Text(
+                                            data: this.article.title,
                                             style: CTextStyle.PLargeTitle,
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
                                             textAlign: TextAlign.left
                                         ),
-                                        new Text(
-                                            $"{username} · {DateConvert.DateStringFromNow(time)} · 阅读 {this.article.viewCount}",
-                                            style: CTextStyle.PSmallBody3,
-                                            textAlign: TextAlign.left
+                                        new ArticleCardInfo(
+                                            fullName: this.fullName,
+                                            time: time,
+                                            viewCount: this.article.viewCount
                                         )
                                     }
                                 )
@@ -90,15 +71,12 @@ namespace ConnectApp.components {
                         ),
                         new Container(
                             margin: EdgeInsets.only(8),
-                            width: 114,
-                            height: 76,
-                            child: new PlaceholderImage(this.article.thumbnail.url.EndsWith(".gif")
-                                    ? this.article.thumbnail.url
-                                    : $"{this.article.thumbnail.url}.300x0x1.jpg",
-                                114,
-                                76,
-                                4,
-                                BoxFit.cover
+                            child: new PlaceholderImage(
+                                imageUrl: imageUrl,
+                                width: imageWidth,
+                                height: imageHeight,
+                                borderRadius: borderRadius,
+                                fit: BoxFit.cover
                             )
                         )
                     }

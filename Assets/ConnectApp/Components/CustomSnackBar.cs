@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using ConnectApp.Components;
-using ConnectApp.constants;
+using ConnectApp.Constants;
+using ConnectApp.Main;
 using Unity.UIWidgets.animation;
 using Unity.UIWidgets.async;
 using Unity.UIWidgets.foundation;
@@ -11,7 +11,7 @@ using Unity.UIWidgets.scheduler;
 using Unity.UIWidgets.ui;
 using Unity.UIWidgets.widgets;
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     class _SnackBarRoute : OverlayRoute {
         public _SnackBarRoute(
             CustomSnackBar customSnackBar = null,
@@ -206,7 +206,7 @@ namespace ConnectApp.components {
                                 new Expanded(
                                     child: new Text(this.widget.message,
                                         maxLines: 3,
-                                        style: CTextStyle.PRegularError.copyWith(this.widget.color)
+                                        style: CTextStyle.PRegularError.copyWith(color: this.widget.color)
                                     )
                                 ),
                                 new CustomButton(

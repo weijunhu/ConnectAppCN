@@ -1,96 +1,98 @@
 using System;
 using System.Collections.Generic;
-using ConnectApp.components;
 using ConnectApp.Components;
-using ConnectApp.components.pull_to_refresh;
-using ConnectApp.constants;
-using ConnectApp.models;
+using ConnectApp.Constants;
+using ConnectApp.Main;
 using ConnectApp.Models.ActionModel;
+using ConnectApp.Models.State;
 using ConnectApp.Models.ViewModel;
 using ConnectApp.redux.actions;
-using ConnectApp.utils;
-using RSG;
+using ConnectApp.Utils;
 using Unity.UIWidgets.foundation;
 using Unity.UIWidgets.painting;
 using Unity.UIWidgets.Redux;
-using Unity.UIWidgets.rendering;
 using Unity.UIWidgets.scheduler;
+using Unity.UIWidgets.ui;
 using Unity.UIWidgets.widgets;
+using Image = Unity.UIWidgets.widgets.Image;
 
 namespace ConnectApp.screens {
     public class ArticlesScreenConnector : StatelessWidget {
         public override Widget build(BuildContext context) {
             return new StoreConnector<AppState, ArticlesScreenViewModel>(
                 converter: state => new ArticlesScreenViewModel {
-                    articlesLoading = state.articleState.articlesLoading,
-                    articleList = state.articleState.articleList,
-                    articleDict = state.articleState.articleDict,
-                    blockArticleList = state.articleState.blockArticleList,
-                    hottestHasMore = state.articleState.hottestHasMore,
-                    userDict = state.userState.userDict,
-                    teamDict = state.teamState.teamDict,
                     isLoggedIn = state.loginState.isLoggedIn,
-                    hosttestOffset = state.articleState.articleList.Count
+                    feedHasNew = state.articleState.feedHasNew,
+                    searchSuggest = state.articleState.searchSuggest,
+                    currentTabBarIndex = state.tabBarState.currentTabIndex,
+                    nationalDayEnabled = state.serviceConfigState.nationalDayEnabled
                 },
                 builder: (context1, viewModel, dispatcher) => {
                     var actionModel = new ArticlesScreenActionModel {
-                        pushToSearch = () => dispatcher.dispatch(new MainNavigatorPushToAction {
-                            routeName = MainNavigatorRoutes.Search
-                        }),
+                        pushToSearch = () => {
+                            dispatcher.dispatch(new MainNavigatorPushToAction {
+                                routeName = MainNavigatorRoutes.Search
+                            });
+                            AnalyticsManager.ClickEnterSearch("Home_Article");
+                        },
                         pushToLogin = () => dispatcher.dispatch(new MainNavigatorPushToAction {
                             routeName = MainNavigatorRoutes.Login
                         }),
-                        pushToArticleDetail = id => dispatcher.dispatch(
-                            new MainNavigatorPushToArticleDetailAction {
-                                articleId = id
-                            }
-                        ),
-                        pushToReport = (reportId, reportType) => dispatcher.dispatch(
-                            new MainNavigatorPushToReportAction {
-                                reportId = reportId,
-                                reportType = reportType
-                            }
-                        ),
-                        pushToBlock = articleId => {
-                            dispatcher.dispatch(new BlockArticleAction {articleId = articleId});
-                            dispatcher.dispatch(new DeleteArticleHistoryAction {articleId = articleId});
+                        pushToReality = () => {
+                            dispatcher.dispatch(new EnterRealityAction());
+                            AnalyticsManager.AnalyticsClickEgg(1);
                         },
-                        startFetchArticles = () => dispatcher.dispatch(new StartFetchArticlesAction()),
-                        fetchArticles = offset => dispatcher.dispatch<IPromise>(Actions.fetchArticles(offset))
+                        pushToGame = () => {
+                            var url = LocalDataManager.getTinyGameUrl();
+                            if (url.isEmpty() || url.Equals("no_game")) {
+                                CustomToast.show(new CustomToastItem(
+                                    context: context,
+                                    "暂无游戏",
+                                    TimeSpan.FromMilliseconds(2000)
+                                ));
+                                return;
+                            }
+                            dispatcher.dispatch(new MainNavigatorPushToWebViewAction {
+                                url = url,
+                                landscape = true,
+                                fullscreen = true,
+                                showOpenInBrowser = false
+                            });
+                        }
                     };
-                    return new ArticlesScreen(viewModel, actionModel);
+                    return new ArticlesScreen(viewModel: viewModel, actionModel: actionModel);
                 }
             );
         }
     }
 
     public class ArticlesScreen : StatefulWidget {
-        public override State createState() {
-            return new _ArticlesScreenState();
-        }
-
         public ArticlesScreen(
             ArticlesScreenViewModel viewModel = null,
             ArticlesScreenActionModel actionModel = null,
             Key key = null
-        ) : base(key) {
+        ) : base(key: key) {
             this.viewModel = viewModel;
             this.actionModel = actionModel;
         }
 
         public readonly ArticlesScreenViewModel viewModel;
         public readonly ArticlesScreenActionModel actionModel;
+
+        public override State createState() {
+            return new _ArticlesScreenState();
+        }
     }
 
-
-    public class _ArticlesScreenState : AutomaticKeepAliveClientMixin<ArticlesScreen> {
-        const int initOffset = 0;
-        int offset = initOffset;
-        RefreshController _refreshController;
-        TextStyle titleStyle;
-        const float maxNavBarHeight = 96;
-        const float minNavBarHeight = 44;
-        float navBarHeight;
+    public class _ArticlesScreenState : AutomaticKeepAliveClientMixin<ArticlesScreen>, RouteAware, TickerProvider {
+        CustomTabController _tabController;
+        int _selectedIndex;
+        float _navBarHeight;
+        string _loginSubId;
+        string _logoutSubId;
+        bool _isRefresh;
+        float _recommendArticlePixels;
+        float _followArticlePixels;
 
         protected override bool wantKeepAlive {
             get { return true; }
@@ -98,167 +100,323 @@ namespace ConnectApp.screens {
 
         public override void initState() {
             base.initState();
-            this._refreshController = new RefreshController();
-            this.navBarHeight = maxNavBarHeight;
-            this.titleStyle = CTextStyle.H2;
-            SchedulerBinding.instance.addPostFrameCallback(_ => {
-                this.widget.actionModel.startFetchArticles();
-                this.widget.actionModel.fetchArticles(initOffset);
+            StatusBarManager.statusBarStyle(false);
+            this._selectedIndex = 1;
+            this._tabController = new CustomTabController(2, this, initialIndex: this._selectedIndex);
+            this._navBarHeight = CustomAppBarUtil.appBarHeight;
+            this._isRefresh = false;
+            this._recommendArticlePixels = 0;
+            this._followArticlePixels = 0;
+            this._loginSubId = EventBus.subscribe(sName: EventBusConstant.login_success, args => {
+                if (this._selectedIndex != 1) {
+                    this._selectedIndex = 1;
+                    this._tabController.animateTo(value: this._selectedIndex);
+                }
+            });
+            this._logoutSubId = EventBus.subscribe(sName: EventBusConstant.logout_success, args => {
+                if (this._selectedIndex != 1) {
+                    this._selectedIndex = 1;
+                    this._tabController.animateTo(value: this._selectedIndex);
+                }
             });
         }
 
-        public override Widget build(BuildContext context) {
-            base.build(context);
-            return new Container(
-                color: CColors.BgGrey,
-                child: new Column(
-                    children: new List<Widget> {
-                        this._buildNavigationBar(),
-                        new Flexible(
-                            child: this._buildArticleList()
-                        )
+        public override void didChangeDependencies() {
+            base.didChangeDependencies();
+            Router.routeObserve.subscribe(this, (PageRoute) ModalRoute.of(context: this.context));
+        }
+
+        public override void dispose() {
+            EventBus.unSubscribe(sName: EventBusConstant.login_success, id: this._loginSubId);
+            EventBus.unSubscribe(sName: EventBusConstant.logout_success, id: this._logoutSubId);
+            Router.routeObserve.unsubscribe(this);
+            base.dispose();
+        }
+
+        public Ticker createTicker(TickerCallback onTick) {
+            return new Ticker(onTick: onTick, () => $"created by {this}");
+        }
+
+        bool _onNotification(ScrollNotification notification) {
+            var axisDirection = notification.metrics.axisDirection;
+            if (axisDirection == AxisDirection.left || axisDirection == AxisDirection.right) {
+                return true;
+            }
+
+            var pixels = notification.metrics.pixels;
+            if (this._selectedIndex == 0) {
+                this._followArticlePixels = pixels;
+            }
+
+            if (this._selectedIndex == 1) {
+                this._recommendArticlePixels = pixels;
+            }
+
+            if (pixels <= 0) {
+                if (this._navBarHeight != CustomAppBarUtil.appBarHeight) {
+                    this._navBarHeight = CustomAppBarUtil.appBarHeight;
+                    this.setState(() => { });
+                }
+            }
+            else {
+                if (pixels <= CustomAppBarUtil.appBarHeight) {
+                    this._navBarHeight = CustomAppBarUtil.appBarHeight - pixels;
+                    this.setState(() => { });
+                }
+                else {
+                    if (this._navBarHeight != 0) {
+                        this._navBarHeight = 0;
+                        this.setState(() => { });
                     }
+                }
+            }
+
+            this._changeTabBarItemStatus(pixels: pixels, status: TabBarItemStatus.toHome);
+            return true;
+        }
+
+        void _changeTabBarItemStatus(float pixels, TabBarItemStatus status) {
+            if (pixels > MediaQuery.of(context: this.context).size.height) {
+                if (!this._isRefresh) {
+                    this._isRefresh = true;
+                    EventBus.publish(sName: EventBusConstant.article_refresh,
+                        new List<object> {TabBarItemStatus.toRefresh});
+                }
+            }
+            else {
+                if (this._isRefresh) {
+                    this._isRefresh = false;
+                    EventBus.publish(sName: EventBusConstant.article_refresh, new List<object> {status});
+                }
+            }
+        }
+
+        public override Widget build(BuildContext context) {
+            base.build(context: context);
+            return new Container(
+                padding: EdgeInsets.only(top: CCommonUtils.getSafeAreaTopPadding(context: context)),
+                color: CColors.White,
+                child: new NotificationListener<ScrollNotification>(
+                    onNotification: this._onNotification,
+                    child: new Column(
+                        children: new List<Widget> {
+                            this._buildNavigationBar(),
+                            this._buildContent()
+                        }
+                    )
                 )
             );
         }
 
         Widget _buildNavigationBar() {
-            return new AnimatedContainer(
-                height: this.navBarHeight,
+            return new Container(
                 color: CColors.White,
-                duration: new TimeSpan(0, 0, 0, 0, 0),
+                height: this._navBarHeight,
                 child: new Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: new List<Widget> {
-                        new Container(
-                            padding: EdgeInsets.only(16, bottom: 8),
-                            child: new AnimatedDefaultTextStyle(
-                                child: new Text("文章"),
-                                style: this.titleStyle,
-                                duration: new TimeSpan(0, 0, 0, 0, 100)
+                        new SizedBox(width: 16),
+                        new Expanded(
+                            child: new GestureDetector(
+                                onTap: () => this.widget.actionModel.pushToSearch(),
+                                child: new Container(
+                                    height: 32,
+                                    decoration: new BoxDecoration(
+                                        color: CColors.EmojiBottomBar,
+                                        borderRadius: BorderRadius.all(16)
+                                    ),
+                                    child: new Row(
+                                        children: new List<Widget> {
+                                            new Padding(
+                                                padding: EdgeInsets.only(16, right: 8),
+                                                child: new Icon(
+                                                    icon: Icons.outline_search,
+                                                    size: 16,
+                                                    color: CColors.Icon
+                                                )
+                                            ),
+                                            new Text(
+                                                this.widget.viewModel.searchSuggest.isNotEmpty()
+                                                    ? this.widget.viewModel.searchSuggest
+                                                    : "搜索",
+                                                style: new TextStyle(
+                                                    fontSize: 14,
+                                                    fontFamily: "Roboto-Regular",
+                                                    color: CColors.TextBody5
+                                                )
+                                            )
+                                        }
+                                    )
+                                )
                             )
                         ),
                         new CustomButton(
                             padding: EdgeInsets.only(16, 8, 16, 8),
-                            onPressed: () => this.widget.actionModel.pushToSearch(),
-                            child: new Icon(
-                                Icons.search,
-                                size: 28,
-                                color: CColors.BrownGrey
-                            )
+                            onPressed: () => this.widget.actionModel.pushToGame(),
+                            child: new GamepadButton()
                         )
                     }
                 )
             );
         }
 
-        Widget _buildArticleList() {
-            Widget content = new Container();
-
-            if (this.widget.viewModel.articlesLoading && this.widget.viewModel.articleList.isEmpty()) {
-                content = ListView.builder(
-                    itemCount: 4,
-                    itemBuilder: (cxt, index) => new ArticleLoading()
-                );
-            }
-            else if (this.widget.viewModel.articleList.Count <= 0) {
-                content = new BlankView("暂无文章", true, tapCallback: () => {
-                    this.widget.actionModel.startFetchArticles();
-                    this.widget.actionModel.fetchArticles(initOffset);
-                });
+        Widget _buildContent() {
+            ScrollPhysics physics;
+            if (this.widget.viewModel.isLoggedIn) {
+                physics = new BouncingScrollPhysics();
             }
             else {
-                content = new SmartRefresher(
-                    controller: this._refreshController,
-                    enablePullDown: true,
-                    enablePullUp: this.widget.viewModel.hottestHasMore,
-                    onRefresh: this.onRefresh,
-                    child: ListView.builder(
-                        physics: new AlwaysScrollableScrollPhysics(),
-                        itemCount: this.widget.viewModel.articleList.Count,
-                        itemBuilder: (cxt, index) => {
-                            var articleId = this.widget.viewModel.articleList[index];
-                            if (this.widget.viewModel.blockArticleList.Contains(articleId)) {
-                                return new Container();
-                            }
-
-                            var article = this.widget.viewModel.articleDict[articleId];
-                            var fullName = "";
-                            if (article.ownerType == OwnerType.user.ToString()) {
-                                if (this.widget.viewModel.userDict.ContainsKey(article.userId)) {
-                                    fullName = this.widget.viewModel.userDict[article.userId].fullName;
-                                }
-                            }
-
-                            if (article.ownerType == OwnerType.team.ToString()) {
-                                if (this.widget.viewModel.teamDict.ContainsKey(article.teamId)) {
-                                    fullName = this.widget.viewModel.teamDict[article.teamId].name;
-                                }
-                            }
-
-                            return new ArticleCard(
-                                article,
-                                () => this.widget.actionModel.pushToArticleDetail(articleId),
-                                () => ReportManager.showReportView(this.widget.viewModel.isLoggedIn,
-                                    articleId,
-                                    ReportType.article, this.widget.actionModel.pushToLogin,
-                                    this.widget.actionModel.pushToReport, this.widget.actionModel.pushToBlock
-                                ),
-                                fullName,
-                                new ObjectKey(article.id)
-                            );
-                        }
-                    )
-                );
+                physics = new NeverScrollableScrollPhysics();
             }
 
-            return new NotificationListener<ScrollNotification>(
-                onNotification: this._onNotification,
-                child: new Container(
-                    color: CColors.background3,
-                    child: content
+            return new Expanded(
+                child: new CustomSegmentedControl(
+                    new List<object> {
+                        this._buildSelectItem("关注", 0),
+                        this._buildSelectItem("推荐", 1)
+                    },
+                    new List<Widget> {
+                        new FollowArticleScreenConnector(selectedIndex: this._selectedIndex),
+                        new RecommendArticleScreenConnector(selectedIndex: this._selectedIndex)
+                    },
+                    newValue => {
+                        this.setState(() => this._selectedIndex = newValue);
+                        if (newValue == 0) {
+                            AnalyticsManager.AnalyticsClickHomeFocus();
+                            this._changeTabBarItemStatus(pixels: this._followArticlePixels,
+                                status: TabBarItemStatus.normal);
+                        }
+
+                        if (newValue == 1) {
+                            this._changeTabBarItemStatus(pixels: this._recommendArticlePixels,
+                                status: TabBarItemStatus.normal);
+                        }
+                    },
+                    1,
+                    trailing: this._buildTrailing(),
+                    headerDecoration: new BoxDecoration(
+                        color: CColors.White,
+                        border: new Border(bottom: new BorderSide(this._navBarHeight <= 0
+                            ? CColors.Separator2
+                            : CColors.Transparent))
+                    ),
+                    indicator: new CustomGradientsTabIndicator(
+                        insets: EdgeInsets.symmetric(horizontal: 8),
+                        height: 8,
+                        gradient: new LinearGradient(
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                            new List<Color> {
+                                new Color(0xFFB1E0FF),
+                                new Color(0xFF6EC6FF)
+                            }
+                        )
+                    ),
+                    headerPadding: EdgeInsets.only(8, bottom: 8),
+                    labelPadding: EdgeInsets.zero,
+                    selectedColor: CColors.TextTitle,
+                    unselectedColor: CColors.TextBody4,
+                    unselectedTextStyle: new TextStyle(
+                        fontSize: 18,
+                        fontFamily: "Roboto-Medium"
+                    ),
+                    selectedTextStyle: new TextStyle(
+                        fontSize: 18,
+                        fontFamily: "Roboto-Medium"
+                    ),
+                    controller: this._tabController,
+                    physics: physics,
+                    onTap: index => {
+                        if (this._selectedIndex != index) {
+                            if (index == 0) {
+                                if (!this.widget.viewModel.isLoggedIn) {
+                                    this.widget.actionModel.pushToLogin();
+                                    return;
+                                }
+                            }
+
+                            this.setState(() => this._selectedIndex = index);
+                            this._tabController.animateTo(value: index);
+                        }
+                    }
                 )
             );
         }
 
-        void onRefresh(bool up) {
-            if (up) {
-                this.offset = initOffset;
+        Widget _buildSelectItem(string title, int index) {
+            Widget redDot;
+            if (index == 0 && this.widget.viewModel.isLoggedIn && this.widget.viewModel.feedHasNew) {
+                redDot = new Positioned(
+                    top: 0,
+                    right: 0,
+                    child: new Container(
+                        width: 8,
+                        height: 8,
+                        decoration: new BoxDecoration(
+                            color: CColors.Error,
+                            borderRadius: BorderRadius.circular(4)
+                        )
+                    )
+                );
             }
             else {
-                this.offset = this.widget.viewModel.hosttestOffset;
+                redDot = new Container();
             }
 
-            this.widget.actionModel.fetchArticles(this.offset)
-                .Then(() => this._refreshController.sendBack(up, up ? RefreshStatus.completed : RefreshStatus.idle))
-                .Catch(_ => this._refreshController.sendBack(up, RefreshStatus.failed));
+            return new Container(
+                height: 44,
+                alignment: Alignment.bottomCenter,
+                child: new Stack(
+                    children: new List<Widget> {
+                        new Container(
+                            padding: EdgeInsets.only(8, 4, 8),
+                            color: CColors.Transparent,
+                            child: new Text(
+                                data: title
+                            )
+                        ),
+                        redDot
+                    }
+                )
+            );
         }
 
-        bool _onNotification(ScrollNotification notification) {
-            var pixels = notification.metrics.pixels;
-            SchedulerBinding.instance.addPostFrameCallback(_ => {
-                if (pixels > 0 && pixels <= 52) {
-                    this.titleStyle = CTextStyle.H5;
-                    this.navBarHeight = maxNavBarHeight - pixels;
-                    this.setState(() => { });
-                }
-                else if (pixels <= 0) {
-                    if (this.navBarHeight <= maxNavBarHeight) {
-                        this.titleStyle = CTextStyle.H2;
-                        this.navBarHeight = maxNavBarHeight;
-                        this.setState(() => { });
+        Widget _buildTrailing() {
+            return new Opacity(
+                (CustomAppBarUtil.appBarHeight - this._navBarHeight) / CustomAppBarUtil.appBarHeight,
+                child: new Row(
+                    children: new List<Widget> {
+                        new CustomButton(
+                            padding: EdgeInsets.only(16, 8, 8, 8),
+                            onPressed: () => this.widget.actionModel.pushToSearch(),
+                            child: new Icon(
+                                icon: Icons.outline_search,
+                                size: 28,
+                                color: CColors.Icon
+                            )
+                        ),
+                        new CustomButton(
+                            padding: EdgeInsets.only(8, 8, 16, 8),
+                            onPressed: () => this.widget.actionModel.pushToGame(),
+                            child: Image.asset("image/egg-gamepad")
+                        )
                     }
-                }
-                else if (pixels > 52) {
-                    if (!(this.navBarHeight <= minNavBarHeight)) {
-                        this.titleStyle = CTextStyle.H5;
-                        this.navBarHeight = minNavBarHeight;
-                        this.setState(() => { });
-                    }
-                }
-            });
-            return true;
+                )
+            );
+        }
+
+        public void didPopNext() {
+            if (this.widget.viewModel.currentTabBarIndex == 0) {
+                StatusBarManager.statusBarStyle(false);
+            }
+        }
+
+        public void didPush() {
+        }
+
+        public void didPop() {
+        }
+
+        public void didPushNext() {
         }
     }
 }

@@ -1,22 +1,25 @@
 using System;
 using System.Collections.Generic;
-using ConnectApp.constants;
-using ConnectApp.models;
+using ConnectApp.Constants;
+using ConnectApp.Models.Model;
+using ConnectApp.Utils;
 using Unity.UIWidgets.foundation;
 using Unity.UIWidgets.gestures;
 using Unity.UIWidgets.painting;
 using Unity.UIWidgets.rendering;
 using Unity.UIWidgets.ui;
 using Unity.UIWidgets.widgets;
+using UnityEngine;
+using Color = Unity.UIWidgets.ui.Color;
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     public class EventCard : StatelessWidget {
         public EventCard(
             IEvent model,
             string place = null,
             GestureTapCallback onTap = null,
             Key key = null
-        ) : base(key) {
+        ) :base(key: key) {
             this.model = model;
             this.place = place;
             this.onTap = onTap;
@@ -31,13 +34,18 @@ namespace ConnectApp.components {
                 return new Container();
             }
 
-            var time = Convert.ToDateTime(this.model.begin.startTime);
+            const float imageWidth = 114;
+            const float imageHeight = 76;
+            const float borderRadius = 4;
+
+            var time = Convert.ToDateTime(value: this.model.begin.startTime);
             var hour = $"{time.Hour.ToString().PadLeft(2, '0')}";
             var minute = $"{time.Minute.ToString().PadLeft(2, '0')}";
             var hourMinute = $"{hour}:{minute}";
             var address = this.place ?? "";
             var imageUrl = this.model.avatar ?? this.model.background;
             var card = new Container(
+                height: 108,
                 padding: EdgeInsets.all(16),
                 color: CColors.White,
                 child: new Row(
@@ -55,7 +63,7 @@ namespace ConnectApp.components {
                                             height: 1.33f,
                                             fontSize: 24,
                                             fontFamily: "Roboto-Bold",
-                                            color: CColors.SecondaryPink
+                                            color: CColors.Error
                                         )
                                     ),
                                     new Text(
@@ -89,30 +97,44 @@ namespace ConnectApp.components {
                             )
                         ),
                         new Container(
-                            width: 114,
-                            height: 76,
                             child: new Stack(
                                 children: new List<Widget> {
                                     new PlaceholderImage(
-                                        imageUrl.EndsWith(".gif") ? imageUrl : $"{imageUrl}.600x0x1.jpg",
-                                        114,
-                                        76,
-                                        4,
-                                        BoxFit.cover
+                                        imageUrl.EndsWith(".gif")
+                                            ? imageUrl
+                                            : CImageUtils.SuitableSizeImageUrl(imageWidth, imageUrl),
+                                        imageWidth,
+                                        imageHeight,
+                                        borderRadius,
+                                        BoxFit.cover,
+                                        color: CColorUtils.GetSpecificDarkColorFromId(id: this.model.id)
                                     ),
                                     new Positioned(
                                         bottom: 0,
                                         right: 0,
                                         child: new ClipRRect(
-                                            borderRadius: BorderRadius.only(bottomRight: 4),
+                                            borderRadius: BorderRadius.only(4, bottomRight: 4),
                                             child: new Container(
                                                 width: 41,
                                                 height: 24,
-                                                color: this.model.mode == "online"
-                                                    ? CColors.SecondaryPink
-                                                    : CColors.PrimaryBlue,
+                                                decoration: new BoxDecoration(
+                                                    gradient: new LinearGradient(
+                                                        begin: Alignment.centerLeft,
+                                                        end: Alignment.centerRight,
+                                                        this.model.mode == "online"
+                                                            ? new List<Color> {
+                                                                Color.fromARGB(255, 250, 120, 102),
+                                                                CColors.SecondaryPink
+                                                            }
+                                                            : new List<Color> {
+                                                                Color.fromARGB(255, 69, 199, 250),
+                                                                CColors.PrimaryBlue
+                                                            }
+                                                    )
+                                                ),
                                                 alignment: Alignment.center,
-                                                child: new Text(this.model.mode == "online" ? "线上" : "线下",
+                                                child: new Text(
+                                                    this.model.mode == "online" ? "线上" : "线下",
                                                     style: CTextStyle.CaptionWhite,
                                                     textAlign: TextAlign.center
                                                 )

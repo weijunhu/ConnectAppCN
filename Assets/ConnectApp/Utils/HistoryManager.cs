@@ -1,16 +1,40 @@
 using System.Collections.Generic;
-using ConnectApp.models;
+using ConnectApp.Models.Model;
 using Newtonsoft.Json;
 using Unity.UIWidgets.foundation;
 using UnityEngine;
 
-namespace ConnectApp.utils {
+namespace ConnectApp.Utils {
     public static class HistoryManager {
-        const string _searchHistoryKey = "searchHistoryKey";
+        const string _homeAfterTimeKey = "homeAfterTimeKey";
+        const string _searchArticleHistoryKey = "searchArticleHistoryKey";
         const string _articleHistoryKey = "articleHistoryKey";
         const string _eventHistoryKey = "eventHistoryKey";
         const string _blockArticleKey = "blockArticleKey";
+        const string _blockUserKey = "blockUserKey";
         const string _visitorId = "visitor";
+        const int _searchArticleHistoryLimit = 5;
+        const int _articleHistoryLimit = 50;
+        const int _eventHistoryLimit = 50;
+
+        public static string homeAfterTime(string userId) {
+            if (!PlayerPrefs.HasKey(_homeAfterTimeKey + userId)) {
+                return "";
+            }
+
+            return PlayerPrefs.GetString(_homeAfterTimeKey + userId);
+        }
+
+        public static void saveHomeAfterTime(string afterTime, string userId) {
+            PlayerPrefs.SetString(_homeAfterTimeKey + userId, value: afterTime);
+            PlayerPrefs.Save();
+        }
+
+        public static void deleteHomeAfterTime(string userId) {
+            if (PlayerPrefs.HasKey(_homeAfterTimeKey + userId)) {
+                PlayerPrefs.DeleteKey(_homeAfterTimeKey + userId);
+            }
+        }
 
         public static List<Article> articleHistoryList(string userId = _visitorId) {
             var articleHistory = PlayerPrefs.GetString(_articleHistoryKey + userId);
@@ -39,8 +63,8 @@ namespace ConnectApp.utils {
 
             articleHistoryList.RemoveAll(item => item.id == article.id);
             articleHistoryList.Insert(0, article);
-            if (articleHistoryList.Count > 50) {
-                articleHistoryList.RemoveRange(50, articleHistoryList.Count - 50);
+            if (articleHistoryList.Count > _articleHistoryLimit) {
+                articleHistoryList.RemoveRange(_articleHistoryLimit, articleHistoryList.Count - _articleHistoryLimit);
             }
 
             var newArticleHistory = JsonConvert.SerializeObject(articleHistoryList);
@@ -88,8 +112,8 @@ namespace ConnectApp.utils {
 
             eventHistoryList.RemoveAll(item => item.id == eventObj.id);
             eventHistoryList.Insert(0, eventObj);
-            if (eventHistoryList.Count > 50) {
-                eventHistoryList.RemoveRange(50, eventHistoryList.Count - 50);
+            if (eventHistoryList.Count > _eventHistoryLimit) {
+                eventHistoryList.RemoveRange(_eventHistoryLimit, eventHistoryList.Count - _eventHistoryLimit);
             }
 
             var newEventHistory = JsonConvert.SerializeObject(eventHistoryList);
@@ -118,58 +142,59 @@ namespace ConnectApp.utils {
             }
         }
 
-        public static List<string> searchHistoryList(string userId = _visitorId) {
-            var searchHistory = PlayerPrefs.GetString(_searchHistoryKey + userId);
-            var searchHistoryList = new List<string>();
-            if (searchHistory.isNotEmpty()) {
-                searchHistoryList = JsonConvert.DeserializeObject<List<string>>(searchHistory);
+        public static List<string> searchArticleHistoryList(string userId = _visitorId) {
+            var searchArticleHistory = PlayerPrefs.GetString(_searchArticleHistoryKey + userId);
+            var searchArticleHistoryList = new List<string>();
+            if (searchArticleHistory.isNotEmpty()) {
+                searchArticleHistoryList = JsonConvert.DeserializeObject<List<string>>(searchArticleHistory);
             }
 
-            return searchHistoryList;
+            return searchArticleHistoryList;
         }
 
-        public static List<string> saveSearchHistoryList(string keyword, string userId = _visitorId) {
-            var searchHistory = PlayerPrefs.GetString(_searchHistoryKey + userId);
-            var searchHistoryList = new List<string>();
-            if (searchHistory.isNotEmpty()) {
-                searchHistoryList = JsonConvert.DeserializeObject<List<string>>(searchHistory);
+        public static List<string> saveSearchArticleHistoryList(string keyword, string userId = _visitorId) {
+            var searchArticleHistory = PlayerPrefs.GetString(_searchArticleHistoryKey + userId);
+            var searchArticleHistoryList = new List<string>();
+            if (searchArticleHistory.isNotEmpty()) {
+                searchArticleHistoryList = JsonConvert.DeserializeObject<List<string>>(searchArticleHistory);
             }
 
-            if (searchHistoryList.Contains(keyword)) {
-                searchHistoryList.Remove(keyword);
+            if (searchArticleHistoryList.Contains(keyword)) {
+                searchArticleHistoryList.Remove(keyword);
             }
 
-            searchHistoryList.Insert(0, keyword);
-            if (searchHistoryList.Count > 5) {
-                searchHistoryList.RemoveRange(5, searchHistoryList.Count - 5);
+            searchArticleHistoryList.Insert(0, keyword);
+            if (searchArticleHistoryList.Count > _searchArticleHistoryLimit) {
+                searchArticleHistoryList.RemoveRange(_searchArticleHistoryLimit,
+                    searchArticleHistoryList.Count - _searchArticleHistoryLimit);
             }
 
-            var newSearchHistory = JsonConvert.SerializeObject(searchHistoryList);
-            PlayerPrefs.SetString(_searchHistoryKey + userId, newSearchHistory);
+            var newSearchHistory = JsonConvert.SerializeObject(searchArticleHistoryList);
+            PlayerPrefs.SetString(_searchArticleHistoryKey + userId, newSearchHistory);
             PlayerPrefs.Save();
-            return searchHistoryList;
+            return searchArticleHistoryList;
         }
 
-        public static List<string> deleteSearchHistoryList(string keyword, string userId = _visitorId) {
-            var searchHistory = PlayerPrefs.GetString(_searchHistoryKey + userId);
-            var searchHistoryList = new List<string>();
-            if (searchHistory.isNotEmpty()) {
-                searchHistoryList = JsonConvert.DeserializeObject<List<string>>(searchHistory);
+        public static List<string> deleteSearchArticleHistoryList(string keyword, string userId = _visitorId) {
+            var searchArticleHistory = PlayerPrefs.GetString(_searchArticleHistoryKey + userId);
+            var searchArticleHistoryList = new List<string>();
+            if (searchArticleHistory.isNotEmpty()) {
+                searchArticleHistoryList = JsonConvert.DeserializeObject<List<string>>(searchArticleHistory);
             }
 
-            if (searchHistoryList.Contains(keyword)) {
-                searchHistoryList.Remove(keyword);
+            if (searchArticleHistoryList.Contains(keyword)) {
+                searchArticleHistoryList.Remove(keyword);
             }
 
-            var newSearchHistory = JsonConvert.SerializeObject(searchHistoryList);
-            PlayerPrefs.SetString(_searchHistoryKey + userId, newSearchHistory);
+            var newSearchHistory = JsonConvert.SerializeObject(searchArticleHistoryList);
+            PlayerPrefs.SetString(_searchArticleHistoryKey + userId, newSearchHistory);
             PlayerPrefs.Save();
-            return searchHistoryList;
+            return searchArticleHistoryList;
         }
 
-        public static void deleteAllSearchHistory(string userId = _visitorId) {
-            if (PlayerPrefs.HasKey(_searchHistoryKey + userId)) {
-                PlayerPrefs.DeleteKey(_searchHistoryKey + userId);
+        public static void deleteAllSearchArticleHistory(string userId = _visitorId) {
+            if (PlayerPrefs.HasKey(_searchArticleHistoryKey + userId)) {
+                PlayerPrefs.DeleteKey(_searchArticleHistoryKey + userId);
             }
         }
 
@@ -199,6 +224,44 @@ namespace ConnectApp.utils {
             PlayerPrefs.SetString(_blockArticleKey + userId, newBlockArticle);
             PlayerPrefs.Save();
             return blockArticleList;
+        }
+        
+        public static HashSet<string> blockUserIdSet(string currentUserId = null) {
+            if (currentUserId == null) {
+                return new HashSet<string>();
+            }
+
+            var blockUserData = PlayerPrefs.GetString(_blockUserKey + currentUserId);
+            var blockUserIdSet = new HashSet<string>();
+            if (blockUserData.isNotEmpty()) {
+                blockUserIdSet = JsonConvert.DeserializeObject<HashSet<string>>(value: blockUserData);
+            }
+
+            return blockUserIdSet;
+        }
+
+        public static bool isBlockUser(string userId) {
+            return blockUserIdSet(currentUserId: UserInfoManager.getUserInfo().userId).Contains(item: userId);
+        }
+
+        public static HashSet<string> updateBlockUserId(string blockUserId, string currentUserId, bool remove) {
+            var blockUserData = PlayerPrefs.GetString(_blockUserKey + currentUserId);
+            var blockUserIdSet = new HashSet<string>();
+            if (blockUserData.isNotEmpty()) {
+                blockUserIdSet = JsonConvert.DeserializeObject<HashSet<string>>(value: blockUserData);
+            }
+
+            if (remove) {
+                blockUserIdSet.Remove(item: blockUserId);
+            }
+            else {
+                blockUserIdSet.Add(item: blockUserId);
+            }
+            
+            var newBlockUserData = JsonConvert.SerializeObject(value: blockUserIdSet);
+            PlayerPrefs.SetString(_blockUserKey + currentUserId, value: newBlockUserData);
+            PlayerPrefs.Save();
+            return blockUserIdSet;
         }
     }
 }

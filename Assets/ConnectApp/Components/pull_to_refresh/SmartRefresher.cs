@@ -1,13 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using ConnectApp.Constants;
 using Unity.UIWidgets.animation;
 using Unity.UIWidgets.foundation;
+using Unity.UIWidgets.painting;
 using Unity.UIWidgets.scheduler;
 using Unity.UIWidgets.widgets;
 using UnityEngine;
 
-namespace ConnectApp.components.pull_to_refresh {
+namespace ConnectApp.Components.pull_to_refresh {
     public static class RefreshStatus {
         public const int idle = 0;
         public const int canRefresh = 1;
@@ -20,6 +22,7 @@ namespace ConnectApp.components.pull_to_refresh {
     public class SmartRefresher : StatefulWidget {
         public SmartRefresher(
             ScrollView child,
+            float initialOffset = 0f,
             IndicatorBuilder headerBuilder = null,
             IndicatorBuilder footerBuilder = null,
             Config headerConfig = null,
@@ -27,15 +30,26 @@ namespace ConnectApp.components.pull_to_refresh {
             bool enablePullUp = DefaultConstants.default_enablePullUp,
             bool enablePullDown = DefaultConstants.default_enablePullDown,
             bool enableOverScroll = DefaultConstants.default_enableOverScroll,
+            bool reverse = false,
             OnRefresh onRefresh = null,
             OnOffsetChange onOffsetChange = null,
             RefreshController controller = null,
             NotificationListenerCallback<ScrollNotification> onNotification = null,
+            bool hasBottomMargin = false,
             Key key = null
-        ) : base(key) {
+        ) : base(key: key) {
             this.child = child;
-            this.headerBuilder = headerBuilder ?? ((context, mode) => new SmartRefreshHeader(mode, RefreshHeaderType.other));
-            this.footerBuilder = footerBuilder ?? ((context, mode) => new SmartRefreshFooter(mode));
+            this.initialOffset = initialOffset;
+            this.headerBuilder =
+                headerBuilder ?? ((context, mode) => new SmartRefreshHeader(mode, RefreshHeaderType.other));
+            this.footerBuilder = footerBuilder ?? ((context, mode) => new SmartRefreshFooter(
+                                     mode: mode,
+                                     hasBottomMargin
+                                         ? EdgeInsets.only(0, 16, 0,
+                                             16 + CConstant.TabBarHeight +
+                                             MediaQuery.of(context: context).padding.bottom)
+                                         : null
+                                 ));
             this.headerConfig = headerConfig ?? new RefreshConfig();
             this.footerConfig = footerConfig ?? new LoadConfig(triggerDistance: 0);
             this.enablePullUp = enablePullUp;
@@ -45,6 +59,7 @@ namespace ConnectApp.components.pull_to_refresh {
             this.onOffsetChange = onOffsetChange;
             this.controller = controller ?? new RefreshController();
             this.onNotification = onNotification;
+            this.reverse = reverse;
         }
 
         public readonly ScrollView child;
@@ -73,9 +88,12 @@ namespace ConnectApp.components.pull_to_refresh {
 
         //controller inner state
         public readonly RefreshController controller;
-        
+
+        public readonly float initialOffset;
+
         public readonly NotificationListenerCallback<ScrollNotification> onNotification;
 
+        public readonly bool reverse;
 
         public override State createState() {
             return new _SmartRefresherState();
@@ -144,9 +162,18 @@ namespace ConnectApp.components.pull_to_refresh {
         }
 
         bool _dispatchScrollEvent(ScrollNotification notification) {
-            if (this.widget.onNotification != null) {
-                this.widget.onNotification(notification);
+            this.widget.onNotification?.Invoke(notification);
+
+            var axisDirection = notification.metrics.axisDirection;
+            var scrollDirection = this.widget.child.scrollDirection;
+            if ((axisDirection == AxisDirection.left || axisDirection == AxisDirection.right) && scrollDirection == Axis.vertical) {
+                return false;
             }
+
+            if ((axisDirection == AxisDirection.up || axisDirection == AxisDirection.down) && scrollDirection == Axis.horizontal) {
+                return false;
+            }
+
             // when is scroll in the ScrollInside,nothing to do
             if (!_isPullUp(notification) && !_isPullDown(notification)) {
                 return false;
@@ -161,6 +188,7 @@ namespace ConnectApp.components.pull_to_refresh {
                 if (updateNotification.dragDetails == null) {
                     return this._handleScrollEnd(notification);
                 }
+
                 if (updateNotification.dragDetails != null) {
                     return this._handleScrollMoving(updateNotification);
                 }
@@ -199,7 +227,7 @@ namespace ConnectApp.components.pull_to_refresh {
         }
 
         void _init() {
-            this._scrollController = new ScrollController();
+            this._scrollController = new ScrollController(initialScrollOffset: this.widget.initialOffset);
             this.widget.controller.scrollController = this._scrollController;
             SchedulerBinding.instance.addPostFrameCallback(duration => { this._onAfterBuild(); });
             this._scrollController.addListener(this._handleOffsetCallback);
@@ -209,22 +237,22 @@ namespace ConnectApp.components.pull_to_refresh {
 
         void _handleOffsetCallback() {
             var overScrollPastStart = Mathf.Max(this._scrollController.position.minScrollExtent -
-                                                  this._scrollController.position.pixels +
-                                                  (this.widget.headerConfig is RefreshConfig &&
-                                                   (this.topModeLis.value == RefreshStatus.refreshing ||
-                                                    this.topModeLis.value == RefreshStatus.completed ||
-                                                    this.topModeLis.value == RefreshStatus.failed)
-                                                      ? (this.widget.headerConfig as RefreshConfig).visibleRange
-                                                      : 0.0f),
+                                                this._scrollController.position.pixels +
+                                                (this.widget.headerConfig is RefreshConfig &&
+                                                 (this.topModeLis.value == RefreshStatus.refreshing ||
+                                                  this.topModeLis.value == RefreshStatus.completed ||
+                                                  this.topModeLis.value == RefreshStatus.failed)
+                                                    ? (this.widget.headerConfig as RefreshConfig).visibleRange
+                                                    : 0.0f),
                 0.0f);
             var overScrollPastEnd = Mathf.Max(this._scrollController.position.pixels -
-                                                this._scrollController.position.maxScrollExtent +
-                                                (this.widget.footerConfig is RefreshConfig &&
-                                                 (this.bottomModeLis.value == RefreshStatus.refreshing ||
-                                                  this.bottomModeLis.value == RefreshStatus.completed ||
-                                                  this.bottomModeLis.value == RefreshStatus.failed)
-                                                    ? (this.widget.footerConfig as RefreshConfig).visibleRange
-                                                    : 0.0f),
+                                              this._scrollController.position.maxScrollExtent +
+                                              (this.widget.footerConfig is RefreshConfig &&
+                                               (this.bottomModeLis.value == RefreshStatus.refreshing ||
+                                                this.bottomModeLis.value == RefreshStatus.completed ||
+                                                this.bottomModeLis.value == RefreshStatus.failed)
+                                                  ? (this.widget.footerConfig as RefreshConfig).visibleRange
+                                                  : 0.0f),
                 0.0f);
             if (overScrollPastStart > overScrollPastEnd) {
                 if (this.widget.headerConfig is RefreshConfig) {
@@ -376,6 +404,7 @@ namespace ConnectApp.components.pull_to_refresh {
                             right: 0.0f,
                             child: new NotificationListener<ScrollNotification>(
                                 child: new CustomScrollView(
+                                    reverse: this.widget.reverse,
                                     physics: new RefreshScrollPhysics(enableOverScroll: this.widget.enableOverScroll),
                                     controller: this._scrollController,
                                     slivers: slivers
@@ -421,11 +450,11 @@ namespace ConnectApp.components.pull_to_refresh {
         }
 
         public void scrollTo(float offset) {
-            this.scrollController.jumpTo(offset);
+            this.scrollController?.jumpTo(offset);
         }
 
         public void animateTo(float to, TimeSpan duration, Curve curve) {
-            this.scrollController.animateTo(to, duration, curve);
+            this.scrollController?.animateTo(to, duration, curve);
         }
 
         public float offset {

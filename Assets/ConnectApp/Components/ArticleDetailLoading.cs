@@ -1,10 +1,10 @@
 using System.Collections.Generic;
-using ConnectApp.constants;
+using ConnectApp.Constants;
 using Unity.UIWidgets.painting;
 using Unity.UIWidgets.ui;
 using Unity.UIWidgets.widgets;
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     public class ArticleDetailLoading : StatelessWidget {
         public override Widget build(BuildContext context) {
             return new Container(
@@ -40,7 +40,8 @@ namespace ConnectApp.components {
                         new Container(
                             height: 6,
                             margin: EdgeInsets.only(right: 100),
-                            color: new Color(0xFFF8F8F8)),
+                            color: new Color(0xFFF8F8F8)
+                        )
                     }
                 )
             );

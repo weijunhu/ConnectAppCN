@@ -8,7 +8,7 @@ using Unity.UIWidgets.rendering;
 using Unity.UIWidgets.ui;
 using Unity.UIWidgets.widgets;
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     public enum CustomDismissibleMode {
         none,
         slide,
@@ -634,7 +634,7 @@ namespace ConnectApp.components {
         public readonly SlideToDismissDelegate slideToDismissDelegate;
         public readonly CustomDismissibleController controller;
 
-        static CustomDismissibleState of(BuildContext context) {
+        public static CustomDismissibleState of(BuildContext context) {
             return (CustomDismissibleState) context.ancestorStateOfType(new TypeMatcher<CustomDismissibleState>());
         }
 

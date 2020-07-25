@@ -1,6 +1,7 @@
 using System;
+using System.Collections.Generic;
 
-namespace ConnectApp.models {
+namespace ConnectApp.Models.Model {
     [Serializable]
     public class LoginInfo {
         public string LSKey;
@@ -9,5 +10,7 @@ namespace ConnectApp.models {
         public string userAvatar;
         public string authId;
         public bool anonymous;
+        public string title;
+        public string coverImageWithCDN;
     }
 }

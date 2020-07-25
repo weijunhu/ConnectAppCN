@@ -1,9 +1,8 @@
-using System;
 using System.Collections.Generic;
-using ConnectApp.constants;
-using ConnectApp.models;
-using ConnectApp.utils;
-using Unity.UIWidgets.animation;
+using ConnectApp.Constants;
+using ConnectApp.Models.Model;
+using ConnectApp.Models.State;
+using ConnectApp.Utils;
 using Unity.UIWidgets.foundation;
 using Unity.UIWidgets.painting;
 using Unity.UIWidgets.rendering;
@@ -12,7 +11,7 @@ using Unity.UIWidgets.ui;
 using Unity.UIWidgets.widgets;
 using Image = Unity.UIWidgets.widgets.Image;
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     public class EventHeader : StatefulWidget {
         public EventHeader(
             IEvent eventObj,
@@ -38,21 +37,6 @@ namespace ConnectApp.components {
     }
 
     class _EventHeaderState : State<EventHeader>, TickerProvider {
-        AnimationController _animationController;
-
-        public override void initState() {
-            base.initState();
-            this._animationController = new AnimationController(
-                vsync: this,
-                duration: new TimeSpan(0, 0, 655)
-            );
-        }
-
-        public override void dispose() {
-            this._animationController.dispose();
-            base.dispose();
-        }
-
         public Ticker createTicker(TickerCallback onTick) {
             return new Ticker(onTick, () => $"created by {this}");
         }
@@ -221,12 +205,7 @@ namespace ConnectApp.components {
 
         Widget _buildCountDownView() {
             return this._buildHeadImage(
-                new EventCountDown(
-                    new StepTween(
-                        655,
-                        0
-                    ).animate(this._animationController)
-                )
+                new Container()
             );
         }
 

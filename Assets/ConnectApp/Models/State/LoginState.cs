@@ -1,6 +1,7 @@
 using System;
+using ConnectApp.Models.Model;
 
-namespace ConnectApp.models {
+namespace ConnectApp.Models.State {
     [Serializable]
     public class LoginState {
         public LoginInfo loginInfo;
@@ -8,5 +9,6 @@ namespace ConnectApp.models {
         public string password;
         public bool loading;
         public bool isLoggedIn;
+        public string newNotifications;
     }
 }

@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
-using ConnectApp.components;
 using ConnectApp.Components;
-using ConnectApp.constants;
-using ConnectApp.utils;
+using ConnectApp.Constants;
+using ConnectApp.Main;
+using ConnectApp.redux;
+using ConnectApp.redux.actions;
+using ConnectApp.Utils;
 using Unity.UIWidgets.async;
 using Unity.UIWidgets.foundation;
 using Unity.UIWidgets.painting;
-using Unity.UIWidgets.rendering;
 using Unity.UIWidgets.ui;
 using Unity.UIWidgets.widgets;
 using UnityEngine;
@@ -16,20 +17,29 @@ namespace ConnectApp.screens {
     public class WebViewScreen : StatefulWidget {
         public WebViewScreen(
             string url = null,
+            bool landscape = false,
+            bool fullScreen = false,
+            bool showOpenInBrowser = true,
             Key key = null
-        ) : base(key) {
+        ) : base(key: key) {
             this.url = url;
+            this.landscape = landscape;
+            this.fullScreen = fullScreen || landscape;
+            this.showOpenInBrowser = showOpenInBrowser;
         }
 
         public readonly string url;
+        public readonly bool landscape;
+        public readonly bool fullScreen;
+        public readonly bool showOpenInBrowser;
 
         public override State createState() {
             return new _WebViewScreenState();
         }
     }
 
-    public class _WebViewScreenState : State<WebViewScreen> {
-        WebViewObject _webViewObject = null;
+    public class _WebViewScreenState : State<WebViewScreen>, RouteAware {
+        WebViewObject _webViewObject;
         float _progress;
         bool _onClose;
         Timer _timer;
@@ -53,19 +63,22 @@ namespace ConnectApp.screens {
                         }
                     }
                 );
-                this._webViewObject.LoadURL(this.widget.url);
                 this._webViewObject.ClearCookies();
                 if (HttpManager.getCookie().isNotEmpty()) {
-#if UNITY_IOS
                     this._webViewObject.AddCustomHeader("Cookie", HttpManager.getCookie());
-#endif
                 }
 
+                this._webViewObject.LoadURL(this.widget.url);
                 this._webViewObject.SetVisibility(true);
             }
 
             this._progress = 0;
             this._onClose = false;
+        }
+
+        public override void didChangeDependencies() {
+            base.didChangeDependencies();
+            Router.routeObserve.subscribe(this, (PageRoute) ModalRoute.of(context: this.context));
         }
 
         public override void dispose() {
@@ -76,8 +89,17 @@ namespace ConnectApp.screens {
 
             if (!Application.isEditor) {
                 this._webViewObject.SetVisibility(false);
-                WebViewManager.instance.destroyWebView();
+                WebViewManager.destroyWebView();
+                if (this.widget.landscape) {
+                    Screen.orientation = ScreenOrientation.Portrait;
+                }
+
+                if (this.widget.fullScreen) {
+                    Screen.fullScreen = false;
+                }
             }
+
+            Router.routeObserve.unsubscribe(this);
 
             base.dispose();
         }
@@ -88,7 +110,7 @@ namespace ConnectApp.screens {
                 this._timer = null;
             }
 
-            this._timer = Window.instance.run(new TimeSpan(0, 0, 0, 0, 60), () => {
+            this._timer = Window.instance.run(TimeSpan.FromMilliseconds(60), () => {
                 if (this._progress < 0.9f) {
                     this._progress += 0.03f;
                     this.setState(() => { });
@@ -110,43 +132,43 @@ namespace ConnectApp.screens {
         }
 
         public override Widget build(BuildContext context) {
-            Widget progressWidget = new Container();
+            Widget progressWidget;
             if (this._progress < 1.0f) {
                 progressWidget = new CustomProgress(this._progress,
                     CColors.White
                 );
             }
+            else {
+                progressWidget = new Container();
+            }
 
             if (!Application.isEditor) {
                 var ratio = Window.instance.devicePixelRatio;
-                var top = (int) (44 * ratio);
+                var navigationBarHeight = this.widget.fullScreen ? 0 : 44;
+                var top = (int) (navigationBarHeight * ratio);
                 if (Application.platform != RuntimePlatform.Android) {
-                    top = (int) ((MediaQuery.of(context).padding.top + 44) * ratio);
+                    top = (int) ((MediaQuery.of(context).padding.top + navigationBarHeight) * ratio);
                 }
 
-                var bottom = (int) (MediaQuery.of(context).padding.bottom * ratio);
-                this._webViewObject.SetMargins(0, top, 0, bottom);
-            }
+                var left = this.widget.landscape ? (int) (80 * ratio) : 0;
+                var right = left;
 
-            Widget tipsText = new Container();
-            if (this._onClose) {
-                tipsText = new Text(
-                    "正在关闭...",
-                    style: CTextStyle.PXLarge
-                );
-            }
-            else {
-                tipsText = new Text(
-                    "正在加载...",
-                    style: CTextStyle.PXLarge
-                );
+                var bottom = (int) (MediaQuery.of(context).padding.bottom * ratio);
+                this._webViewObject.SetMargins(left, top, right, bottom);
+
+                if (this.widget.landscape && this._progress == 1) {
+                    Screen.orientation = ScreenOrientation.LandscapeLeft;
+                    Screen.fullScreen = true;
+                }
             }
 
             return new Container(
                 color: CColors.White,
                 child: new CustomSafeArea(
+                    top: !this.widget.fullScreen,
+                    bottom: false,
                     child: new Container(
-                        color: CColors.background3,
+                        color: CColors.Background,
                         child: new Column(
                             children: new List<Widget> {
                                 new Container(
@@ -161,8 +183,14 @@ namespace ConnectApp.screens {
                                     )
                                 ),
                                 new Expanded(
-                                    child: new Center(
-                                        child: tipsText
+                                    child: new Container(
+                                        color: this.widget.landscape ? CColors.Black : null,
+                                        child: new Center(
+                                            child: new Text(
+                                                this._onClose ? "正在关闭..." : "",
+                                                style: CTextStyle.PXLarge
+                                            )
+                                        )
                                     )
                                 )
                             }
@@ -173,34 +201,57 @@ namespace ConnectApp.screens {
         }
 
         Widget _buildNavigationBar() {
-            return new Container(
-                height: 44,
-                color: CColors.White,
-                child: new Row(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: new List<Widget> {
-                        new GestureDetector(
-                            onTap: () => {
-                                this._onClose = true;
-                                this.setState(() => { });
-                                if (Router.navigator.canPop()) {
-                                    Router.navigator.pop();
-                                }
-
-                                if (!Application.isEditor) {
-                                    this._webViewObject.SetVisibility(false);
-                                    WebViewManager.instance.destroyWebView();
-                                }
-                            },
-                            child: new Container(
-                                padding: EdgeInsets.symmetric(10, 16),
-                                color: CColors.Transparent,
-                                child: new Icon(Icons.arrow_back, size: 24, color: CColors.icon3))
-                        )
+            return new CustomAppBar(
+                () => {
+                    this._onClose = true;
+                    this.setState(() => { });
+                    if (Router.navigator.canPop()) {
+                        Router.navigator.pop();
                     }
-                )
+
+                    if (!Application.isEditor) {
+                        this._webViewObject.SetVisibility(false);
+                        WebViewManager.destroyWebView();
+                    }
+                },
+                rightWidget: this.widget.showOpenInBrowser ?
+                    (Widget) new CustomButton(
+                        onPressed: () => StoreProvider.store.dispatcher.dispatch(new OpenUrlAction {url = this.widget.url}),
+                        child: new Icon(
+                            icon: Icons.open_in_browser,
+                            size: 24,
+                            color: CColors.Icon
+                        )
+                    )
+                    : new Container(),
+                backgroundColor: this._progress == 1 && this.widget.fullScreen ? CColors.Black : null,
+                bottomSeparatorColor: this._progress == 1 && this.widget.fullScreen ? CColors.Black : null
             );
+        }
+
+        public void didPopNext() {
+            if (!Application.isEditor) {
+                this._webViewObject.SetVisibility(true);
+            }
+        }
+
+        public void didPush() {
+            if (!Application.isEditor) {
+                this._webViewObject.SetVisibility(true);
+            }
+        }
+
+        public void didPop() {
+            if (!Application.isEditor) {
+                this._webViewObject.SetVisibility(false);
+                WebViewManager.destroyWebView();
+            }
+        }
+
+        public void didPushNext() {
+            if (!Application.isEditor) {
+                this._webViewObject.SetVisibility(false);
+            }
         }
     }
 }

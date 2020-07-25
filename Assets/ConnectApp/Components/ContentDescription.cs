@@ -1,32 +1,54 @@
 using System;
 using System.Collections.Generic;
-using ConnectApp.constants;
-using ConnectApp.models;
+using System.Text.RegularExpressions;
+using ConnectApp.Constants;
+using ConnectApp.Models.Model;
+using ConnectApp.Utils;
 using Newtonsoft.Json;
+using SyntaxHighlight;
 using Unity.UIWidgets.foundation;
 using Unity.UIWidgets.gestures;
 using Unity.UIWidgets.painting;
 using Unity.UIWidgets.rendering;
+using Unity.UIWidgets.service;
 using Unity.UIWidgets.ui;
 using Unity.UIWidgets.widgets;
+using Image = Unity.UIWidgets.widgets.Image;
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     public static class ContentDescription {
+        const int codeBlockNumber = 10;
+        static readonly Color codeBlockBackgroundColor = Color.fromRGBO(110, 198, 255, 0.12f);
+        public static readonly List<string> imageUrls = new List<string>();
+        static readonly Highlighter highlighter = new Highlighter();
+
         public static List<Widget> map(BuildContext context, string cont, Dictionary<string, ContentMap> contentMap,
-            Action<string> openUrl, Action<string> playVideo) {
-            if (cont == null) {
+            Dictionary<string, VideoSliceMap> videoSliceMap, Dictionary<string, string> videoPosterMap,
+            Action<string> openUrl, Action<string, bool, int> playVideo, Action loginAction, string licence,
+            Action<string> browserImage = null) {
+            if (cont == null || contentMap == null) {
                 return new List<Widget>();
             }
+
+            imageUrls.Clear();
 
             var content = JsonConvert.DeserializeObject<EventContent>(cont);
             var widgets = new List<Widget>();
 
-            var _isFirstOrderedListItem = false;
+            var orderedIndex = 1;
             var blocks = content.blocks;
             for (var i = 0; i < blocks.Count; i++) {
                 var block = blocks[i];
                 var type = block.type;
                 var text = block.text;
+                if (text.isEmpty()) {
+                    continue;
+                }
+
+                if (text.Contains("\u0000")) {
+                    text = text.Replace("\u0000", "");
+                }
+
                 switch (type) {
                     case "header-one": {
                         var inlineSpans = _RichStyle(text, content.entityMap, block.entityRanges,
@@ -47,9 +69,12 @@ namespace ConnectApp.components {
                     }
                         break;
                     case "code-block": {
-                        var inlineSpans = _RichStyle(text, content.entityMap, block.entityRanges,
-                            block.inlineStyleRanges, openUrl, CTextStyle.PCodeStyle);
-                        widgets.Add(_CodeBlock(context, text, inlineSpans));
+                        var codeBlockList = _CodeBlock(text);
+                        if (codeBlockList.Count > 0) {
+                            foreach (var widget in codeBlockList) {
+                                widgets.Add(widget);
+                            }
+                        }
                     }
                         break;
                     case "unstyled": {
@@ -57,6 +82,12 @@ namespace ConnectApp.components {
                             var inlineSpans = _RichStyle(text, content.entityMap, block.entityRanges,
                                 block.inlineStyleRanges, openUrl);
                             widgets.Add(_Unstyled(text, inlineSpans));
+                        }
+                        else if (text == "") {
+                            var child = new Container(
+                                color: CColors.White,
+                                child: new Text("" + Environment.NewLine, style: CTextStyle.PXLarge));
+                            widgets.Add(child);
                         }
                     }
                         break;
@@ -67,8 +98,12 @@ namespace ConnectApp.components {
                             isFirst = beforeBlock.type != "unordered-list-item";
                         }
 
-                        var afterBlock = blocks[i + 1];
-                        var isLast = afterBlock.type != "unordered-list-item";
+                        var isLast = true;
+                        if (i < blocks.Count - 1) {
+                            var afterBlock = blocks[i + 1];
+                            isLast = afterBlock.type != "unordered-list-item";
+                        }
+
                         var inlineSpans = _RichStyle(text, content.entityMap, block.entityRanges,
                             block.inlineStyleRanges, openUrl);
                         widgets.Add(
@@ -82,41 +117,67 @@ namespace ConnectApp.components {
                     }
                         break;
                     case "ordered-list-item": {
-                        if (_isFirstOrderedListItem) {
-                            break;
+                        var isFirst = true;
+                        if (i > 0) {
+                            var beforeBlock = blocks[i - 1];
+                            isFirst = beforeBlock.type != "ordered-list-item";
                         }
 
-                        var items = new List<OrderedListModel>();
-                        var orderedItem = blocks.FindAll(item => item.type == "ordered-list-item");
-                        orderedItem.ForEach(item => items.Add(new OrderedListModel {
-                            text = item.text,
-                            entityMap = content.entityMap,
-                            entityRanges = item.entityRanges,
-                            inlineStyleRanges = item.inlineStyleRanges,
-                            openUrl = openUrl
-                        }));
+                        if (isFirst) {
+                            orderedIndex = 1;
+                        }
+                        else {
+                            orderedIndex++;
+                        }
 
-                        widgets.Add(_OrderedList(items));
-                        _isFirstOrderedListItem = true;
+                        var isLast = true;
+                        if (i < blocks.Count - 1) {
+                            var afterBlock = blocks[i + 1];
+                            isLast = afterBlock.type != "ordered-list-item";
+                        }
+
+                        var inlineSpans = _RichStyle(text, content.entityMap, block.entityRanges,
+                            block.inlineStyleRanges, openUrl);
+                        widgets.Add(_OrderedList(text, orderedIndex, isLast, inlineSpans));
                     }
                         break;
                     case "atomic": {
                         var key = block.entityRanges.first().key.ToString();
-                        if (content.entityMap.ContainsKey(key)) {
-                            var dataMap = content.entityMap[key];
+                        if (content.entityMap.ContainsKey(key: key)) {
+                            var dataMap = content.entityMap[key: key];
                             var data = dataMap.data;
                             if (data.contentId.isNotEmpty()) {
-                                if (contentMap.ContainsKey(data.contentId)) {
-                                    var map = contentMap[data.contentId];
+                                if (contentMap.ContainsKey(key: data.contentId)) {
+                                    var map = contentMap[key: data.contentId];
                                     var url = map.url;
+                                    var attachmentId = map.attachmentId ?? "";
                                     var downloadUrl = map.downloadUrl ?? "";
                                     var contentType = map.contentType ?? "";
-                                    var originalImage = map.originalImage == null
-                                        ? map.thumbnail
-                                        : map.originalImage;
-                                    widgets.Add(_Atomic(context, dataMap.type, contentType, data.title, originalImage,
-                                        url, downloadUrl,
-                                        openUrl, playVideo));
+                                    var originalImage = map.originalImage ?? map.thumbnail;
+                                    var needUpdate = false;
+                                    var limitSeconds = 0;
+                                    var videoStatus = "completed";
+                                    if (videoSliceMap != null && videoSliceMap.isNotEmpty() &&
+                                        videoSliceMap.ContainsKey(map.attachmentId)) {
+                                        var videoSlice = videoSliceMap[map.attachmentId];
+                                        videoStatus = videoSlice.status;
+                                        if (videoSlice.canWatch == false) {
+                                            needUpdate = true;
+                                            limitSeconds = videoSlice.limitSeconds;
+                                        }
+                                    }
+
+                                    var videoPoster = "";
+                                    if (videoPosterMap != null && videoPosterMap.isNotEmpty() &&
+                                        videoPosterMap.ContainsKey(map.attachmentId)) {
+                                        videoPoster = videoPosterMap[map.attachmentId];
+                                    }
+
+
+                                    widgets.Add(_Atomic(context, dataMap.type, contentType, data.title, data.url,
+                                        originalImage, videoStatus, videoPoster,
+                                        url, downloadUrl, attachmentId
+                                        , openUrl, playVideo, loginAction, needUpdate, limitSeconds, browserImage));
                                 }
                             }
                         }
@@ -133,10 +194,7 @@ namespace ConnectApp.components {
                 return new Container();
             }
 
-            Widget child = new Text(
-                text,
-                style: CTextStyle.H4
-            );
+            Widget child;
             if (inlineSpans != null) {
                 child = new RichText(
                     text: new TextSpan(
@@ -144,11 +202,25 @@ namespace ConnectApp.components {
                     )
                 );
             }
+            else {
+                child = new Text(
+                    data: text,
+                    style: CTextStyle.H4
+                );
+            }
 
             return new Container(
                 color: CColors.White,
                 padding: EdgeInsets.only(16, 16, 16, 24),
-                child: child
+                child: new TipMenu(
+                    new List<TipMenuItem> {
+                        new TipMenuItem(
+                            "复制",
+                            () => Clipboard.setData(new ClipboardData(text: text))
+                        )
+                    },
+                    child: child
+                )
             );
         }
 
@@ -157,10 +229,7 @@ namespace ConnectApp.components {
                 return new Container();
             }
 
-            Widget child = new Text(
-                text,
-                style: CTextStyle.H5
-            );
+            Widget child;
             if (inlineSpans != null) {
                 child = new RichText(
                     text: new TextSpan(
@@ -168,11 +237,25 @@ namespace ConnectApp.components {
                     )
                 );
             }
+            else {
+                child = new Text(
+                    data: text,
+                    style: CTextStyle.H5
+                );
+            }
 
             return new Container(
                 color: CColors.White,
                 padding: EdgeInsets.only(16, 16, 16, 24),
-                child: child
+                child: new TipMenu(
+                    new List<TipMenuItem> {
+                        new TipMenuItem(
+                            "复制",
+                            () => Clipboard.setData(new ClipboardData(text: text))
+                        )
+                    },
+                    child: child
+                )
             );
         }
 
@@ -181,10 +264,7 @@ namespace ConnectApp.components {
                 return new Container();
             }
 
-            Widget child = new Text(
-                text,
-                style: CTextStyle.PXLarge
-            );
+            Widget child;
             if (inlineSpans != null) {
                 child = new RichText(
                     text: new TextSpan(
@@ -192,23 +272,76 @@ namespace ConnectApp.components {
                     )
                 );
             }
+            else {
+                child = new Text(
+                    data: text,
+                    style: CTextStyle.PXLarge
+                );
+            }
 
-            return new Container(
-                color: CColors.White,
-                padding: EdgeInsets.only(16, right: 16, bottom: 24),
-                child: child
+            return new TipMenu(
+                new List<TipMenuItem> {
+                    new TipMenuItem(
+                        "复制",
+                        () => Clipboard.setData(new ClipboardData(text: text))
+                    )
+                },
+                new Container(
+                    color: CColors.White,
+                    padding: EdgeInsets.only(16, right: 16, bottom: 24),
+                    child: child
+                )
             );
         }
 
-        static Widget _CodeBlock(BuildContext context, string text, List<TextSpan> inlineSpans) {
-            if (text == null) {
-                return new Container();
+        static List<Widget> _CodeBlock(string text) {
+            List<Widget> codeBlockList = new List<Widget>();
+            if (text.isEmpty()) {
+                codeBlockList.Add(new Container());
+            }
+            else {
+                var codeStringList = text.Split(Environment.NewLine.ToCharArray());
+                codeBlockList.Add(new Container(color: codeBlockBackgroundColor, height: 16));
+                for (int i = 0; i < codeStringList.Length; i++) {
+                    string codeBlockGroup = "";
+                    for (int j = 0; j < codeBlockNumber && i < codeStringList.Length; j++) {
+                        codeBlockGroup += codeStringList[i];
+                        if (i == codeStringList.Length - 1 && codeStringList.Length % codeBlockNumber != 0) {
+                            break;
+                        }
+
+                        if (j < codeBlockNumber - 1) {
+                            codeBlockGroup += Environment.NewLine;
+                            i++;
+                        }
+                    }
+                    var codeWidget = new TipMenu(
+                        new List<TipMenuItem> {
+                            new TipMenuItem(
+                                "复制",
+                                () => Clipboard.setData(new ClipboardData(text: codeBlockGroup))
+                            )
+                        },
+                        new Container(
+                            color: codeBlockBackgroundColor,
+                            padding: EdgeInsets.symmetric(horizontal: 16),
+                            child: new RichText(
+                                text: highlighter.Highlight("C#", input: codeBlockGroup)
+                            )
+                        )
+                    );
+                    codeBlockList.Add(item: codeWidget);
+                }
+
+                codeBlockList.Add(new Container(color: codeBlockBackgroundColor, height: 16));
+                codeBlockList.Add(new Container(color: CColors.White, height: 24));
             }
 
-            Widget child = new Text(
-                text,
-                style: CTextStyle.PCodeStyle
-            );
+            return codeBlockList;
+        }
+
+        static Widget _QuoteBlock(string text, List<TextSpan> inlineSpans) {
+            Widget child;
             if (inlineSpans != null) {
                 child = new RichText(
                     text: new TextSpan(
@@ -216,57 +349,42 @@ namespace ConnectApp.components {
                     )
                 );
             }
+            else {
+                child = new Text(
+                    data: text,
+                    style: CTextStyle.PXLargeBody4
+                );
+            }
 
-            return new Container(
-                color: CColors.White,
-                padding: EdgeInsets.only(bottom: 24),
-                child: new Container(
-                    color: Color.fromRGBO(110, 198, 255, 0.12f),
-                    width: MediaQuery.of(context).size.width,
+            return new TipMenu(
+                new List<TipMenuItem> {
+                    new TipMenuItem("复制", () => Clipboard.setData(new ClipboardData(text: text)))
+                },
+                new Container(
+                    color: CColors.White,
+                    padding: EdgeInsets.only(16, right: 16, bottom: 24),
                     child: new Container(
-                        padding: EdgeInsets.all(16),
+                        decoration: new BoxDecoration(
+                            color: CColors.White,
+                            border: new Border(
+                                left: new BorderSide(
+                                    color: CColors.Separator,
+                                    8
+                                )
+                            )
+                        ),
+                        padding: EdgeInsets.only(16),
                         child: child
                     )
                 )
             );
         }
 
-
-        static Widget _QuoteBlock(string text, List<TextSpan> inlineSpans) {
-            Widget child = new Text(
-                text,
-                style: CTextStyle.PXLargeBody4
-            );
-            if (inlineSpans != null) {
-                child = new RichText(
-                    text: new TextSpan(
-                        children: inlineSpans
-                    )
-                );
-            }
-
-            return new Container(
-                color: CColors.White,
-                padding: EdgeInsets.only(16, right: 16, bottom: 24),
-                child: new Container(
-                    decoration: new BoxDecoration(
-                        CColors.White,
-                        border: new Border(
-                            left: new BorderSide(
-                                CColors.Separator,
-                                8
-                            )
-                        )
-                    ),
-                    padding: EdgeInsets.only(16),
-                    child: child
-                )
-            );
-        }
-
-        static Widget _Atomic(BuildContext context, string type, string contentType, string title,
-            _OriginalImage originalImage,
-            string url, string downloadUrl, Action<string> openUrl, Action<string> playVideo) {
+        static Widget _Atomic(BuildContext context, string type, string contentType, string title, string dataUrl,
+            _OriginalImage originalImage, string videoStatus, string videoPoster,
+            string url, string downloadUrl, string attachmentId, Action<string> openUrl,
+            Action<string, bool, int> playVideo, Action loginAction, bool needUpdate, int limitSeconds,
+            Action<string> browserImage = null) {
             if (type == "ATTACHMENT" && contentType != "video/mp4") {
                 return new Container();
             }
@@ -274,36 +392,59 @@ namespace ConnectApp.components {
             var playButton = Positioned.fill(
                 new Container()
             );
+
             if (type == "VIDEO" || type == "ATTACHMENT") {
                 playButton = Positioned.fill(
                     new Center(
-                        child: new CustomButton(
-                            onPressed: () => {
-                                if (type == "ATTACHMENT") {
-                                    playVideo($"{downloadUrl}?noLoginRequired=true");
-                                }
-                                else {
-                                    if (url == null || url.Length <= 0) {
-                                        return;
-                                    }
+                        child: videoStatus == "completed"
+                            ? UserInfoManager.isLogin()
+                                ? new CustomButton(
+                                    onPressed: () => {
+                                        if (type == "ATTACHMENT") {
+                                            if (url.isEmpty()) {
+                                                playVideo(downloadUrl, false, 0);
+                                            }
+                                            else {
+                                                playVideo($"{Config.apiAddress_cn}/playlist/{attachmentId}", needUpdate,
+                                                    limitSeconds);
+                                            }
+                                        }
+                                        else {
+                                            if (url == null || url.Length <= 0) {
+                                                return;
+                                            }
 
-                                    openUrl(url);
-                                }
-                            },
-                            child: new Container(
-                                width: 60,
-                                height: 60,
-                                decoration: new BoxDecoration(
-                                    CColors.H5White,
-                                    borderRadius: BorderRadius.all(30)
-                                ),
-                                child: new Icon(
-                                    Icons.play_arrow,
-                                    size: 45,
-                                    color: CColors.icon3
+                                            openUrl(url);
+                                        }
+                                    },
+                                    child: new Container(
+                                        width: 60,
+                                        height: 60,
+                                        decoration: new BoxDecoration(
+                                            CColors.H5White,
+                                            borderRadius: BorderRadius.all(30)
+                                        ),
+                                        child: new Icon(
+                                            Icons.play_arrow,
+                                            size: 45,
+                                            color: CColors.Icon
+                                        )
+                                    )
                                 )
+                                : (Widget) new GestureDetector(
+                                    onTap: () => { loginAction(); },
+                                    child: new Container(
+                                        color: CColors.Black.withOpacity(0.5f),
+                                        alignment: Alignment.center,
+                                        child: new Text("Login to view this video",
+                                            style: CTextStyle.PXLargeWhite.merge(
+                                                new TextStyle(decoration: TextDecoration.underline)))
+                                    ))
+                            : new Container(
+                                color: CColors.Black.withOpacity(0.5f),
+                                alignment: Alignment.center,
+                                child: new Text("Video is processing, try it later", style: CTextStyle.PXLargeWhite)
                             )
-                        )
                     )
                 );
             }
@@ -324,7 +465,11 @@ namespace ConnectApp.components {
                                         new Container(
                                             width: attachWidth,
                                             height: attachHeight,
-                                            color: CColors.Black
+                                            color: CColors.Black,
+                                            child: Image.network(
+                                                videoPoster,
+                                                fit: BoxFit.cover
+                                            )
                                         ),
                                         playButton
                                     }
@@ -341,17 +486,33 @@ namespace ConnectApp.components {
             var height = width * originalImage.height / originalImage.width;
             var imageUrl = originalImage.url;
             if (imageUrl.isNotEmpty()) {
-                imageUrl = imageUrl.EndsWith(".gif") ? imageUrl : $"{originalImage.url}.600x0x1.jpg";
+                imageUrl = imageUrl.EndsWith(".gif") || imageUrl.EndsWith(".png")
+                    ? imageUrl
+                    : CImageUtils.SuitableSizeImageUrl(MediaQuery.of(context).size.width, imageUrl);
+                imageUrls.Add(imageUrl);
             }
 
             var nodes = new List<Widget> {
                 new Stack(
                     children: new List<Widget> {
-                        new PlaceholderImage(
-                            imageUrl,
-                            width,
-                            height,
-                            fit: BoxFit.cover
+                        new GestureDetector(
+                            child: new Hero(
+                                tag: imageUrl,
+                                child: new PlaceholderImage(
+                                    imageUrl: imageUrl,
+                                    width: width,
+                                    height: height,
+                                    fit: BoxFit.cover,
+                                    useCachedNetworkImage: true
+                                )
+                            ), onTap: () => {
+                                if (dataUrl.isNotEmpty()) {
+                                    openUrl(obj: dataUrl);
+                                }
+                                else {
+                                    browserImage?.Invoke(imageUrl);
+                                }
+                            }
                         ),
                         playButton
                     }
@@ -391,47 +552,38 @@ namespace ConnectApp.components {
             );
         }
 
-
-        static Widget _OrderedList(List<OrderedListModel> items) {
-            var widgets = new List<Widget>();
-
-            for (var i = 0; i < items.Count; i++) {
-                var item = items[i];
-                var spans = new List<TextSpan> {
-                    new TextSpan(
-                        $"{i + 1}. ",
-                        CTextStyle.PXLarge
-                    )
-                };
-                var linkSpans = _RichStyle(item.text, item.entityMap, item.entityRanges, item.inlineStyleRanges,
-                    item.openUrl);
-                if (linkSpans != null) {
-                    spans.AddRange(linkSpans);
-                }
-                else {
-                    spans.Add(new TextSpan(item.text, CTextStyle.PXLarge));
-                }
-
-                widgets.Add(
-                    new Container(
-                        padding: EdgeInsets.only(16, right: 16),
-                        margin: EdgeInsets.only(top: i == 0 ? 0 : 4),
-                        child: new RichText(
-                            text: new TextSpan(
-                                style: CTextStyle.PXLarge,
-                                children: spans
-                            )
-                        )
-                    )
-                );
+        static Widget _OrderedList(
+            string text,
+            int index,
+            bool isLast,
+            List<TextSpan> inlineSpans
+        ) {
+            var spans = new List<TextSpan> {
+                new TextSpan(
+                    $"{index}. ",
+                    style: CTextStyle.PXLarge
+                )
+            };
+            if (inlineSpans != null) {
+                spans.AddRange(collection: inlineSpans);
+            }
+            else {
+                spans.Add(new TextSpan(text: text, style: CTextStyle.PXLarge));
             }
 
-            return new Container(
-                color: CColors.White,
-                padding: EdgeInsets.only(bottom: 24),
-                child: new Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: widgets
+            return new TipMenu(
+                new List<TipMenuItem> {
+                    new TipMenuItem("复制", () => Clipboard.setData(new ClipboardData(text: text)))
+                },
+                new Container(
+                    color: CColors.White,
+                    padding: EdgeInsets.only(16, right: 16, top: index == 1 ? 0 : 4, bottom: isLast ? 24 : 0),
+                    child: new RichText(
+                        text: new TextSpan(
+                            style: CTextStyle.PXLarge,
+                            children: spans
+                        )
+                    )
                 )
             );
         }
@@ -442,15 +594,18 @@ namespace ConnectApp.components {
             bool isLast,
             List<TextSpan> inlineSpans
         ) {
-            Widget child = new Text(
-                text,
-                style: CTextStyle.PXLarge
-            );
+            Widget child;
             if (inlineSpans != null) {
                 child = new RichText(
                     text: new TextSpan(
                         children: inlineSpans
                     )
+                );
+            }
+            else {
+                child = new Text(
+                    data: text,
+                    style: CTextStyle.PXLarge
                 );
             }
 
@@ -460,7 +615,7 @@ namespace ConnectApp.components {
                     height: 8,
                     margin: EdgeInsets.only(top: 14, right: 8),
                     decoration: new BoxDecoration(
-                        CColors.Black,
+                        color: CColors.Black,
                         borderRadius: BorderRadius.all(4)
                     )
                 ),
@@ -469,12 +624,17 @@ namespace ConnectApp.components {
                 )
             };
 
-            return new Container(
-                color: CColors.White,
-                padding: EdgeInsets.only(16, isFirst ? 0 : 4, 16, isLast ? 24 : 0),
-                child: new Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: spans
+            return new TipMenu(
+                new List<TipMenuItem> {
+                    new TipMenuItem("复制", () => Clipboard.setData(new ClipboardData(text: text)))
+                },
+                new Container(
+                    color: CColors.White,
+                    padding: EdgeInsets.only(16, isFirst ? 0 : 4, 16, isLast ? 24 : 0),
+                    child: new Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: spans
+                    )
                 )
             );
         }
@@ -491,10 +651,11 @@ namespace ConnectApp.components {
                 return null;
             }
 
-            if (entityRanges == null
-                && entityRanges.Count <= 0
-                && inlineStyleRanges == null
-                && inlineStyleRanges.Count <= 0) {
+            // 过滤 emoji
+            text = Regex.Replace(input: text, @"\p{Cs}", $"{(char) EmojiUtils.emptyEmojiCode}");
+
+            if (entityRanges.isNullOrEmpty()
+                && inlineStyleRanges.isNullOrEmpty()) {
                 return null;
             }
 
@@ -542,7 +703,8 @@ namespace ConnectApp.components {
                     new TextSpan(
                         text.Substring(inlineOffset + inlineLength, entityOffset - inlineOffset - inlineLength),
                         newStyle),
-                    new TextSpan(text.Substring(entityOffset, entityLength), newStyle.copyWith(CColors.PrimaryBlue),
+                    new TextSpan(text.Substring(entityOffset, entityLength),
+                        newStyle.copyWith(color: CColors.PrimaryBlue),
                         recognizer: recognizer),
                     new TextSpan(text.Substring(entityOffset + entityLength, text.Length - entityOffset - entityLength),
                         newStyle)
@@ -553,7 +715,8 @@ namespace ConnectApp.components {
             if (inlineOffset >= entityOffset + entityLength) {
                 var spans = new List<TextSpan> {
                     new TextSpan(text.Substring(0, entityOffset), newStyle),
-                    new TextSpan(text.Substring(entityOffset, entityLength), newStyle.copyWith(CColors.PrimaryBlue),
+                    new TextSpan(text.Substring(entityOffset, entityLength),
+                        newStyle.copyWith(color: CColors.PrimaryBlue),
                         recognizer: recognizer),
                     new TextSpan(
                         text.Substring(entityOffset + entityLength, inlineOffset - entityOffset - entityLength),
@@ -627,36 +790,46 @@ namespace ConnectApp.components {
             TextStyle style
         ) {
             if (entityRanges != null && entityRanges.Count > 0) {
-                var entityRange = entityRanges.first();
-                var key = entityRange.key.ToString();
-                if (entityMap.ContainsKey(key)) {
-                    var data = entityMap[key];
-                    if (data.type == "LINK") {
-                        var offset = entityRange.offset;
-                        var length = entityRange.length;
-                        var leftText = text.Substring(0, offset);
-                        var currentText = text.Substring(offset, length);
-                        var rightText = text.Substring(length + offset, text.Length - length - offset);
-                        var recognizer = new TapGestureRecognizer {
-                            onTap = () => openUrl(data.data.url)
-                        };
-                        return new List<TextSpan> {
-                            new TextSpan(
-                                leftText,
-                                style
-                            ),
-                            new TextSpan(
-                                currentText,
-                                style.copyWith(CColors.PrimaryBlue),
-                                recognizer: recognizer
-                            ),
-                            new TextSpan(
-                                rightText,
-                                style
-                            )
-                        };
+                List<TextSpan> linkSpans = new List<TextSpan>();
+                var startIndex = 0;
+                entityRanges.ForEach(entityRange => {
+                    var key = entityRange.key.ToString();
+                    if (entityMap.ContainsKey(key: key)) {
+                        var data = entityMap[key: key];
+                        if (data.type == "LINK") {
+                            var offset = entityRange.offset;
+                            var length = entityRange.length;
+                            var leftText = offset - startIndex <= text.Length
+                                ? text.Substring(startIndex: startIndex, offset - startIndex)
+                                : text;
+
+                            var currentText = length - offset < text.Length
+                                ? text.Substring(startIndex: offset, length: length)
+                                : text;
+
+                            length = currentText.Length;
+                            var recognizer = new TapGestureRecognizer {
+                                onTap = () => openUrl(obj: data.data.url)
+                            };
+                            var linkSpan = new List<TextSpan> {
+                                new TextSpan(
+                                    text: leftText,
+                                    style: style
+                                ),
+                                new TextSpan(
+                                    text: currentText,
+                                    style.copyWith(color: CColors.PrimaryBlue),
+                                    recognizer: recognizer
+                                )
+                            };
+                            linkSpans.AddRange(collection: linkSpan);
+                            startIndex = length + offset;
+                        }
                     }
-                }
+                });
+                var rightText = text.Substring(startIndex: startIndex, text.Length - startIndex);
+                linkSpans.Add(new TextSpan(text: rightText, style: style));
+                return linkSpans;
             }
 
             return null;

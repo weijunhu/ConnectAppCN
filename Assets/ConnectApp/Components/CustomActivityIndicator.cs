@@ -4,8 +4,9 @@ using Unity.UIWidgets.foundation;
 using Unity.UIWidgets.scheduler;
 using Unity.UIWidgets.widgets;
 
-namespace ConnectApp.components {
+namespace ConnectApp.Components {
     public enum AnimatingType {
+        forward,
         repeat,
         stop,
         reset
@@ -18,7 +19,8 @@ namespace ConnectApp.components {
 
     public enum LoadingSize {
         normal,
-        small
+        small,
+        xSmall
     }
 
     public class CustomActivityIndicator : StatefulWidget {
@@ -26,16 +28,19 @@ namespace ConnectApp.components {
             Key key = null,
             AnimatingType animating = AnimatingType.repeat,
             LoadingColor loadingColor = LoadingColor.black,
-            LoadingSize size = LoadingSize.normal
-        ) : base(key) {
+            LoadingSize size = LoadingSize.normal,
+            AnimationController controller = null
+        ) : base(key: key) {
             this.animating = animating;
             this.loadingColor = loadingColor;
             this.size = size;
+            this.controller = controller;
         }
 
         public readonly AnimatingType animating;
         public readonly LoadingColor loadingColor;
         public readonly LoadingSize size;
+        public readonly AnimationController controller;
 
         public override State createState() {
             return new _CustomActivityIndicatorState();
@@ -45,59 +50,83 @@ namespace ConnectApp.components {
     public class _CustomActivityIndicatorState : State<CustomActivityIndicator>, TickerProvider {
         AnimationController _controller;
 
-
         public override void initState() {
             base.initState();
 
-            this._controller = new AnimationController(
-                duration: new TimeSpan(0, 0, 2),
-                vsync: this
-            );
-            if (this.widget.animating == AnimatingType.repeat) {
-                this._controller.repeat();
+            if (this.widget.controller == null) {
+                this._controller = new AnimationController(
+                    duration: new TimeSpan(0, 0, 2),
+                    vsync: this
+                );
+                if (this.widget.animating == AnimatingType.repeat) {
+                    this._controller.repeat();
+                }
+            }
+            else {
+                this._controller = this.widget.controller;
             }
         }
 
         public Ticker createTicker(TickerCallback onTick) {
-            Ticker _ticker = new Ticker(onTick, () => $"created by {this}");
-            return _ticker;
+            return new Ticker(onTick: onTick, () => $"created by {this}");
         }
 
         public override void didUpdateWidget(StatefulWidget oldWidget) {
-            base.didUpdateWidget(oldWidget);
-            if (oldWidget is CustomActivityIndicator) {
-                CustomActivityIndicator customActivityIndicator = (CustomActivityIndicator) oldWidget;
-                if (this.widget.animating != customActivityIndicator.animating) {
-                    if (this.widget.animating == AnimatingType.repeat) {
-                        this._controller.repeat();
+            base.didUpdateWidget(oldWidget: oldWidget);
+            if (oldWidget is CustomActivityIndicator customActivityIndicator) {
+                if (this.widget.controller == null) {
+                    if (customActivityIndicator.controller != null) {
+                        this._controller = new AnimationController(
+                            duration: new TimeSpan(0, 0, 2),
+                            vsync: this);
                     }
-                    else if (this.widget.animating == AnimatingType.stop) {
-                        this._controller.stop();
+                    if (this.widget.animating != customActivityIndicator.animating) {
+                        if (this.widget.animating == AnimatingType.repeat) {
+                            this._controller.repeat();
+                        }
+                        else if (this.widget.animating == AnimatingType.stop) {
+                            this._controller.stop();
+                        }
+                        else if (this.widget.animating == AnimatingType.reset) {
+                            this._controller.reset();
+                        }
                     }
-                    else if (this.widget.animating == AnimatingType.reset) {
-                        this._controller.reset();
+                }
+                else {
+                    if (customActivityIndicator.controller == null) {
+                        this._controller.dispose();
                     }
+
+                    this._controller = this.widget.controller;
                 }
             }
         }
 
         public override Widget build(BuildContext context) {
-            string imageName;
             int sideLength;
-            if (this.widget.size == LoadingSize.normal) {
-                sideLength = 24;
-                imageName = this.widget.loadingColor == LoadingColor.white ? "image/white-loading24" : "image/black-loading24";
-            }
-            else {
-                sideLength = 20;
-                imageName = this.widget.loadingColor == LoadingColor.white ? "image/white-loading20" : "image/black-loading20";
+            switch (this.widget.size) {
+                case LoadingSize.normal: {
+                    sideLength = 24;
+                    break;
+                }
+                case LoadingSize.small: {
+                    sideLength = 20;
+                    break;
+                }
+                case LoadingSize.xSmall:
+                default:{
+                    sideLength = 16;
+                    break;
+                }
             }
 
             return new RotationTransition(
                 turns: this._controller,
                 child: new Center(
                     child: Image.asset(
-                        imageName,
+                        this.widget.loadingColor == LoadingColor.white
+                            ? "image/white-loading"
+                            : "image/black-loading",
                         width: sideLength,
                         height: sideLength
                     )
@@ -106,7 +135,9 @@ namespace ConnectApp.components {
         }
 
         public override void dispose() {
-            this._controller.dispose();
+            if (this.widget.controller == null) {
+                this._controller.dispose();
+            }
             base.dispose();
         }
     }

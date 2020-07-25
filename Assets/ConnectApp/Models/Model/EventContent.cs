@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace ConnectApp.models {
+namespace ConnectApp.Models.Model {
     [Serializable]
     public class EventContent {
         public List<_EventContentBlock> blocks;
@@ -56,6 +56,7 @@ namespace ConnectApp.models {
         public string url;
         public string downloadUrl;
         public string contentType;
+        public string attachmentId;
     }
 
     [Serializable]
@@ -66,11 +67,14 @@ namespace ConnectApp.models {
     }
 
     [Serializable]
-    public class OrderedListModel {
-        public string text;
-        public Dictionary<string, _EventContentEntity> entityMap;
-        public List<_EntityRange> entityRanges;
-        public List<_InlineStyleRange> inlineStyleRanges;
-        public Action<string> openUrl;
+    public class VideoSliceMap {
+        public string id;
+        public string origin;
+        public string verifyType;
+        public string verifyArg;
+        public string status;
+        public int trialSlicesCount;
+        public int limitSeconds;
+        public bool canWatch;
     }
 }

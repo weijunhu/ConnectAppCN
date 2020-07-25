@@ -1,15 +1,13 @@
-using System;
 using System.Collections.Generic;
-using ConnectApp.components;
-using ConnectApp.constants;
-using ConnectApp.models;
+using ConnectApp.Components;
+using ConnectApp.Constants;
 using ConnectApp.Models.ActionModel;
+using ConnectApp.Models.State;
 using ConnectApp.redux.actions;
-using Unity.UIWidgets.animation;
+using ConnectApp.Utils;
 using Unity.UIWidgets.foundation;
 using Unity.UIWidgets.painting;
 using Unity.UIWidgets.Redux;
-using Unity.UIWidgets.rendering;
 using Unity.UIWidgets.widgets;
 
 namespace ConnectApp.screens {
@@ -21,7 +19,7 @@ namespace ConnectApp.screens {
                     var actionModel = new MyEventsScreenActionModel {
                         mainRouterPop = () => dispatcher.dispatch(new MainNavigatorPopAction())
                     };
-                    return new MyEventsScreen(actionModel);
+                    return new MyEventsScreen(actionModel: actionModel);
                 }
             );
         }
@@ -31,7 +29,7 @@ namespace ConnectApp.screens {
         public MyEventsScreen(
             MyEventsScreenActionModel actionModel = null,
             Key key = null
-        ) : base(key) {
+        ) : base(key: key) {
             this.actionModel = actionModel;
         }
 
@@ -43,26 +41,26 @@ namespace ConnectApp.screens {
     }
 
     class _MyEventsScreenState : State<MyEventsScreen> {
-        PageController _pageController;
-        int _selectedIndex;
+        string _selectValue = "all";
 
         public override void initState() {
             base.initState();
-            this._pageController = new PageController();
-            this._selectedIndex = 0;
+            StatusBarManager.statusBarStyle(false);
         }
 
         public override Widget build(BuildContext context) {
             return new Container(
                 color: CColors.White,
                 child: new CustomSafeArea(
+                    bottom: false,
                     child: new Container(
                         color: CColors.White,
                         child: new Column(
                             children: new List<Widget> {
-                                this._buildNavigationBar(context),
-                                this._buildSelectView(),
-                                this._buildContentView()
+                                this._buildNavigationBar(),
+                                new Expanded(
+                                    child: this._buildContentView()
+                                )
                             }
                         )
                     )
@@ -71,72 +69,54 @@ namespace ConnectApp.screens {
         }
 
 
-        Widget _buildNavigationBar(BuildContext context) {
-            return new Container(
-                decoration: new BoxDecoration(CColors.White),
-                width: MediaQuery.of(context).size.width,
-                height: 96,
-                child: new Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: new List<Widget> {
-                        new Container(
-                            child: new CustomButton(
-                                padding: EdgeInsets.only(16, 10, 16),
-                                onPressed: () => this.widget.actionModel.mainRouterPop(),
-                                child: new Icon(
-                                    Icons.arrow_back,
-                                    size: 24,
-                                    color: CColors.icon3
-                                )
-                            ),
-                            height: 44
-                        ),
-                        new Container(
-                            margin: EdgeInsets.only(16, bottom: 12),
-                            child: new Text(
-                                "我的活动",
-                                style: CTextStyle.H2
-                            )
-                        )
-                    }
-                )
-            );
-        }
-
-        Widget _buildSelectView() {
-            return new CustomSegmentedControl(
-                new List<string> {"即将开始", "往期活动"},
-                newValue => {
-                    this.setState(() => this._selectedIndex = newValue);
-                    this._pageController.animateToPage(
-                        newValue,
-                        new TimeSpan(0, 0, 0, 0, 250),
-                        Curves.ease
-                    );
-                }, this._selectedIndex
+        Widget _buildNavigationBar() {
+            return new CustomNavigationBar(
+                new Text(
+                    "我的活动",
+                    style: CTextStyle.H2
+                ),
+                onBack: () => this.widget.actionModel.mainRouterPop()
             );
         }
 
         Widget _buildContentView() {
-            return new Flexible(
-                child: new Container(
-                    child: new PageView(
-                        physics: new BouncingScrollPhysics(),
-                        controller: this._pageController,
-                        onPageChanged: index => { this.setState(() => { this._selectedIndex = index; }); },
-                        children: new List<Widget> {
-                            new MyFutureEventsScreenConnector(),
-                            new MyPastEventsScreenConnector()
-                        }
+            var mode = this._selectValue == "all" ? "" : this._selectValue;
+            return new CustomSegmentedControl(
+                new List<object> {"即将开始", "往期活动"},
+                new List<Widget> {
+                    new MyFutureEventsScreenConnector(mode: mode),
+                    new MyPastEventsScreenConnector(mode: mode)
+                },
+                newValue => AnalyticsManager.ClickEventSegment(
+                    "MineEvent", 0 == newValue ? "ongoing" : "completed"),
+                trailing: new Container(
+                    padding: EdgeInsets.only(right: 12),
+                    child: new CustomDropdownButton<string>(
+                        value: this._selectValue,
+                        items: new List<CustomDropdownMenuItem<string>> {
+                            new CustomDropdownMenuItem<string>(
+                                value: "all",
+                                child: new Text("全部")
+                            ),
+                            new CustomDropdownMenuItem<string>(
+                                value: "online",
+                                child: new Text("线上")
+                            ),
+                            new CustomDropdownMenuItem<string>(
+                                value: "offline",
+                                child: new Text("线下")
+                            )
+                        },
+                        onChanged: newValue => {
+                            if (this._selectValue != newValue) {
+                                this.setState(() => this._selectValue = newValue);
+                            }
+                        },
+                        headerWidget: new Container(height: 6, color: CColors.White),
+                        footerWidget: new Container(height: 6, color: CColors.White)
                     )
                 )
             );
-        }
-
-        public override void dispose() {
-            this._pageController.dispose();
-            base.dispose();
         }
     }
 }
